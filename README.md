@@ -20,6 +20,21 @@ npm run preview
 
 Robot assets are bundled locally. The wardrobe opens in English; the header switches between English and Chinese and remembers your choice. Favorites, colors and saved outfits stay in the current browser.
 
+## GitHub Pages
+
+The live wardrobe is at **[ruziniuuuuu.github.io/DuckRobe](https://ruziniuuuuu.github.io/DuckRobe/)**.
+
+[Deploy to GitHub Pages](https://github.com/ruziniuuuuu/DuckRobe/actions/workflows/deploy-pages.yml) validates robot behavior, every outfit export and asset loading at both root and project paths before building. Pushes to `main` deploy automatically; pull requests run the same checks and build. You can also run the workflow manually from Actions. The repository's Pages source must be **GitHub Actions**.
+
+The build uses the Pages configuration's base path, including for the 3D robot and export assets. Local development defaults to `/`. To preview the project path locally:
+
+```bash
+VITE_BASE_PATH=/DuckRobe/ npm run build
+VITE_BASE_PATH=/DuckRobe/ npm run preview
+```
+
+Open the preview server's `/DuckRobe/` URL. `node scripts/validate-subpath-assets.mjs` checks actual model and export requests against a server that rejects paths outside that prefix.
+
 ## Play and dress up
 
 - Choose a complete look, or browse **hats, eyewear, clothes, accessories and legwear** separately. Each piece has its own product preview and changes only its category. Eyewear has one frame around Microduck's single central eye. The Wearing now chips let you remove pieces individually.

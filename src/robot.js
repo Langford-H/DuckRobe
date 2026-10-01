@@ -22,7 +22,16 @@ export const DEFAULT_POSE = {
   right_ankle: -0.452984,
 };
 
-const BASE_URL = `${import.meta.env?.BASE_URL || '/'}robot/`;
+const APP_BASE_URL = import.meta.env?.BASE_URL || '/';
+
+// Public assets are stored at /robot in the source manifest. Resolve them
+// against the deployed app base, leaving remote and already-resolved URLs alone.
+export function robotAssetUrl(url) {
+  if (/^(?:[a-z][\w+.-]*:|\/\/)/i.test(url)) return url;
+  const base = APP_BASE_URL.endsWith('/') ? APP_BASE_URL : `${APP_BASE_URL}/`;
+  return url.startsWith(base) ? url : `${base}${url.replace(/^\/+/, '')}`;
+}
+
 const quaternion = (q) => new THREE.Quaternion(q[1], q[2], q[3], q[0]).normalize();
 const accentParts = new Set([
   'jaw.stl', 'jaw_soft.stl', 'soft_mouth_top.stl', 'bottom_head_shell.stl',
@@ -76,10 +85,21 @@ async function json(url) {
 
 export async function loadRobot({ colors } = {}) {
   const bodyColors = normalizeRobotColors(colors);
-  const [manifest, kinematics, gltf] = await Promise.all([
-    json(`${BASE_URL}manifest.json`),
-    json(`${BASE_URL}web/kinematics.json`),
-    new GLTFLoader().loadAsync(`${BASE_URL}web/microduck.glb`),
+  const manifest = await json(robotAssetUrl('/robot/manifest.json'));
+  const web = {
+    ...manifest.web,
+    glbUrl: robotAssetUrl(manifest.web.glbUrl),
+    kinematicsUrl: robotAssetUrl(manifest.web.kinematicsUrl),
+  };
+  const native = {
+    ...manifest.native,
+    xmlUrl: robotAssetUrl(manifest.native.xmlUrl),
+    meshBaseUrl: robotAssetUrl(manifest.native.meshBaseUrl),
+    licenseUrl: robotAssetUrl(manifest.native.licenseUrl),
+  };
+  const [kinematics, gltf] = await Promise.all([
+    json(web.kinematicsUrl),
+    new GLTFLoader().loadAsync(web.glbUrl),
   ]);
 
   // The GLB packs official STL part geometries, not an assembled character.
@@ -197,6 +217,8 @@ export async function loadRobot({ colors } = {}) {
 
   const metadata = {
     ...manifest,
+    web,
+    native,
     modelName: 'Microduck',
     kinematics,
     defaultPose: { ...DEFAULT_POSE },
@@ -204,8 +226,8 @@ export async function loadRobot({ colors } = {}) {
     bounds: { min: box.min.toArray(), max: box.max.toArray(), size: box.getSize(new THREE.Vector3()).toArray() },
     groundOffset,
     bodyColors,
-    mjcfUrl: manifest.native.xmlUrl,
-    meshBaseUrl: manifest.native.meshBaseUrl,
+    mjcfUrl: native.xmlUrl,
+    meshBaseUrl: native.meshBaseUrl,
   };
 
   function setColors(colors) {

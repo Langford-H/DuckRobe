@@ -1,7 +1,7 @@
 import { Euler, Matrix3, Matrix4, Quaternion, SRGBColorSpace, Vector3 } from 'three';
 import { strToU8, zipSync } from 'fflate';
 import { createOutfitParts } from './outfits.js';
-import { normalizeRobotColors, robotPartColor } from './robot.js';
+import { normalizeRobotColors, robotAssetUrl, robotPartColor } from './robot.js';
 
 const encoder = new TextEncoder();
 const slots = ['hat', 'eyewear', 'body', 'accessory', 'legwear'];
@@ -264,6 +264,7 @@ function clothingMeshes(parts, metadata, files) {
 }
 
 async function fetchedBytes(url) {
+  url = robotAssetUrl(url);
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Cannot load export asset ${url}: HTTP ${response.status}.`);
   return new Uint8Array(await response.arrayBuffer());
