@@ -1,0 +1,70 @@
+const copy = {
+  stageLive: ['LIVE & A LITTLE LIVELY', '在线，也很活泼'], footerEnergy: ['SMALL DUCK, BIG ENERGY.', '小小鸭子，满满活力。'], madeForMicroduck: ['MADE FOR MICRODUCK', '为 MICRODUCK 而作'],
+  mainNavigation: ['Main navigation', '主导航'], fittingRoom: ['3D fitting room', '三维试衣间'], clothingWardrobe: ['Clothing wardrobe', '服装衣橱'], playWithDuck: ['Play with your duck', '和小鸭子玩耍'],
+  chooseCategory: ['Choose a wardrobe category', '选择衣橱类别'], colorPalettes: ['Duck color palettes', '小鸭子调色盘'], filterCollection: ['Filter by collection', '按系列筛选'], languageChoice: ['Language', '语言'],
+  navWardrobe: ['Wardrobe', '小衣橱'], navSaved: ['Saved looks', '我的搭配'],
+  heroEyebrow: ['THE LITTLE WARDROBE CLUB', '小鸭子的衣橱俱乐部'],
+  heroLead: ['Small duck.', '小小鸭子，'], heroAccent: ['Big personality.', '大大个性。'],
+  heroDescription: ['Dress up your Microduck. Make a little mischief.', '为你的 Microduck 换一身，快乐捣个蛋。'],
+  stageTitle: ['Your little duck', '你的小鸭子'], loadingTitle: ['Your little duck is getting ready…', '小鸭子正在整理衣橱…'],
+  loadingDescription: ['One moment for a little personality.', '稍等一下，可爱马上就来。'],
+  stageHint: ['Drag to turn · Scroll to get closer', '拖动旋转 · 滚动靠近'], resetView: ['Reset view', '重置视角'],
+  surpriseMe: ['Surprise me', '随机惊喜'], actionHop: ['Hop', '蹦一下'], actionDance: ['Happy dance', '开心跳舞'], actionTurn: ['Little twirl', '转个圈'],
+  wearingNow: ['Wearing now', '正在穿着'], clearLook: ['Take it all off', '全部脱下'], nothingEquipped: ['Just your duck, for now.', '原装小鸭，也很可爱。'],
+  duckColors: ['A color of their own', '小鸭子的专属颜色'], resetColors: ['Reset', '还原'], shellColor: ['Shell', '本体'], accentColor: ['Accents', '点缀'],
+  saveLook: ['Save this look', '保存这身搭配'], exportLook: ['Take your duck home', '带小鸭子回家'],
+  slotAll: ['All looks', '完整套装'], slotHat: ['Hats', '帽子'], slotEyewear: ['Eyewear', '眼镜'], slotBody: ['Clothes', '衣服'], slotAccessory: ['Accessories', '配饰'], slotLegwear: ['Legwear', '腿脚'],
+  closetFooterLead: ['No dress code for little ducks.', '小鸭子的穿搭，没有标准答案。'], closetFooterAccent: ['A little you. A whole lot of duck.', '一点你的个性，满满小鸭的可爱。'],
+  footerMade: ['Made for Microduck', '为 Microduck 而作'], modelSources: ['Model & open source', '模型与开源'], hopHint: ['Give your duck a little hop', '让小鸭子蹦一下'],
+  favoriteLook: ['Favorite this look', '收藏这身搭配'], searchWardrobe: ['Search the wardrobe', '搜索衣橱'], searchPlaceholder: ['Find a little inspiration…', '寻找一点穿搭灵感…'],
+  showFavorites: ['Show favorites', '查看收藏'], close: ['Close', '关闭'], allThemes: ['All collections', '全部系列'],
+  closetTitle: ['The little wardrobe', '打开小衣橱'], savedTitle: ['Your little keepsakes', '我的小搭配'],
+  closetNote: ['A few good pieces. Endless little personalities.', '几件好衣服，无限小个性。'], savedNote: ['Good looks are worth keeping.', '喜欢的样子，随时再穿一次。'],
+  catalogNote: ['Little pieces. Lots of possibilities.', '慢慢挑，拼出你的个性。'], favoritesNote: ['A little collection of favorites.', '让心动留在衣橱。'],
+  tryHint: ['Click to try it on', '点击即刻试穿'], partHint: ['Choose one piece. Make it yours.', '选一件，单独换上。'],
+  wearing: ['Wearing', '已穿上'], tryOn: ['Try on {name}', '试穿{name}'], favorite: ['Favorite {name}', '收藏{name}'], unfavorite: ['Unfavorite {name}', '取消收藏{name}'],
+  remove: ['Take off {name}', '脱下{name}'], viewPart: ['Choose {name}', '挑选{name}'], unfilled: ['Not wearing', '未穿'],
+  mixName: ['Your own little mix', '你的自由混搭'], mixDescription: ['A few favorite pieces, with your own little twist.', '把喜欢的单品，穿成自己的小个性。'],
+  mixSeries: ['YOUR LITTLE MIX', '自由混搭'],
+  bareName: ['Original little duck', '原装小鸭'], bareDescription: ['A little orange friend, ready for their next adventure.', '熟悉的小鸭子，等你带它开启下一次冒险。'],
+  original: ['THE ORIGINAL MICRODUCK', '原装 MICRODUCK'], motionOn: ['Ready to play', '开心玩耍中'], motionOff: ['Taking a little rest', '安静看穿搭'],
+  emptyTitle: ['No little pieces here yet', '这里还没有小单品'], emptyText: ['Try another word or collection.', '换个关键词或系列试试。'],
+  favoriteEmpty: ['Keep a little love here', '把心动装进衣橱'], favoriteEmptyText: ['Tap a heart on any look or piece.', '点套装或单品上的爱心，就能在这里找到它。'],
+  savedEmpty: ['A home for your favorite looks', '给喜欢的样子留个位置'], savedEmptyText: ['Pick a look, then save it here.', '先挑一身，再点「保存这身搭配」。'],
+  browse: ['Explore the wardrobe', '去挑一身装扮'], clearFilters: ['See every little piece', '查看全部装扮'], savedLabel: ['SAVED', '搭配'], looksLabel: ['LOOKS', '套装'], piecesLabel: ['PIECES', '单品'],
+  savedToast: ['A little happiness, saved on this device.', '这身快乐，已经保存到本机衣橱。'], duplicateToast: ['This look is already in your wardrobe.', '这身搭配已经住进衣橱啦。'],
+  savedLimit: ['Your wardrobe holds 60 saved looks. Remove one to make room.', '本机已保存 60 身搭配，移除一身就能继续保存。'],
+  restoredToast: ['Your saved look is back, colors and all.', '保存的搭配和颜色，都穿回来啦。'], removedToast: ['Look removed from this device.', '搭配已从本机衣橱移除。'],
+  deleteSaved: ['Delete {name}', '删除{name}'], clearToast: ['Hello again, original little duck.', '原装小鸭回来啦。'], randomToast: ['A little surprise, just for you.', '今天的随机惊喜，送给你。'],
+  readyToast: ['Your little duck is still getting ready.', '小鸭子还在准备，请稍等一下。'], pickFavorite: ['Pick a whole look or a piece to favorite.', '先挑一套或一件喜欢的装扮吧。'],
+  storageError: ['Storage is unavailable. You can still try things on.', '浏览器暂时不能保存数据；本次试穿仍然可用。'],
+  exporting: ['Packing a little personality…', '正在打包这身装扮…'], exported: ['Your duck is packed: URDF, MJCF and all meshes.', '装扮包已导出，包含 URDF、MJCF 和完整网格。'], exportError: ['Export could not finish: {message}', '导出未完成：{message}'],
+  renderError: ['Your little duck could not arrive', '小鸭子暂时没能来到试衣间'], retry: ['Try again', '重新试一下'],
+  previewAlt: ['3D preview of {name}', '{name}的三维预览'], generating: ['Preparing a little preview', '正在生成三维预览'],
+  canvasLabel: ['Microduck 3D fitting room. Drag to rotate.', 'Microduck 三维试衣间，可拖动旋转'],
+  paletteOrange: ['Microduck orange', '经典橘色'], paletteCream: ['Vanilla cream', '香草奶油'], paletteMint: ['Soft mint', '薄荷绿'], paletteBlue: ['Cloud blue', '云朵蓝'], paletteRose: ['Petal pink', '花瓣粉'],
+  aboutTitle: ['A little duck. A lot of you.', '一只小鸭，穿出你的个性。'],
+  aboutText: ['A curated 3D wardrobe for the real Microduck: tailored little clothes, five independent kinds of pieces, and a playful friend who hops, dances and says hello.', '为真实 Microduck 量身设计的立体衣橱：精选小衣服、五类独立部件，还有会蹦跳、跳舞和打招呼的小伙伴。'],
+  aboutStorage: ['Your colors, favorites and saved looks stay in this browser. Exports include URDF, MJCF, the original robot meshes and your chosen pieces.', '调色、收藏和搭配保存在当前浏览器。导出包含 URDF、MJCF、原始机器人网格与当前服饰。'],
+  aboutNote: ['Dress-up pieces are visual attachments. The robot’s physical parameters are preserved.', '服饰为视觉装扮，保留机器人本体的动力学参数。'],
+  sourceTitle: ['Made around the real Microduck.', '从真实的 Microduck 开始。'],
+  sourceText: ['Robot geometry and joints come from Pollen Robotics’ pinned open-source microduck_rl assets. DuckRobe creates the clothing, wardrobe and display choreography.', '机器人几何与关节来自 Pollen Robotics 官方 microduck_rl 开源资产的固定版本。DuckRobe 制作衣橱、服饰几何与展示动作。'],
+  sourceNote: ['Versions and licenses are recorded in THIRD_PARTY_NOTICES.md and included in every export.', '版本与许可记录在 THIRD_PARTY_NOTICES.md，并保留在每个导出包中。'],
+};
+
+export function t(key, language = 'en', variables = {}) {
+  const value = copy[key]?.[language === 'zh' ? 1 : 0] ?? key;
+  return value.replace(/\{(\w+)\}/g, (_, name) => String(variables[name] ?? ''));
+}
+export function localized(item, language = 'en', field = 'name') {
+  return language === 'zh' ? item?.[field] || item?.en || '' : (field === 'name' ? item?.en : item?.[`${field}En`]) || item?.[field] || '';
+}
+export function applyLanguage(language, root = document) {
+  document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en';
+  document.title = language === 'zh' ? 'DuckRobe · 小鸭子的衣橱' : 'DuckRobe · A little duck wardrobe';
+  root.querySelectorAll('[data-i18n]').forEach(node => { node.textContent = t(node.dataset.i18n, language); });
+  for (const [data, attribute] of [['i18nTitle', 'title'], ['i18nAria', 'aria-label'], ['i18nPlaceholder', 'placeholder']]) {
+    root.querySelectorAll(`[data-${data.replace(/[A-Z]/g, c => `-${c.toLowerCase()}`)}]`).forEach(node => node.setAttribute(attribute, t(node.dataset[data], language)));
+  }
+  root.querySelectorAll('[data-language]').forEach(node => { const active = node.dataset.language === language; node.classList.toggle('active', active); node.setAttribute('aria-pressed', String(active)); });
+}
