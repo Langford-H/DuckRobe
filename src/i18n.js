@@ -11,6 +11,7 @@ const copy = {
   accessoryRegions: ['Accessory positions', '配饰佩戴位置'], allPositions: ['All positions', '全部位置'], regionChest: ['Chest', '胸前'], regionSide: ['Side', '身侧'], regionBack: ['Back', '背部'],
   multiPartHint: ['Three spots. Make it your own.', '三个位置，搭出你的个性。'], scrollWardrobe: ['Wardrobe list. Scroll, drag, or use the keyboard to browse.', '衣橱列表，可以滚动、拖动或使用键盘浏览。'],
   navWardrobe: ['Wardrobe', '小衣橱'], navSaved: ['Saved looks', '我的搭配'],
+  githubLabel: ['GitHub', '项目仓库'], githubRepository: ['Open DuckRobe on GitHub in a new tab', '在新标签页打开 DuckRobe 的 GitHub 仓库'], projectRepository: ['DuckRobe on GitHub', 'DuckRobe 项目仓库'],
   heroEyebrow: ['THE LITTLE WARDROBE CLUB', '小鸭子的衣橱俱乐部'],
   heroLead: ['Every duck deserves', '每只小鸭，都值得'], heroAccent: ['a wardrobe.', '拥有自己的衣橱。'],
   heroDescription: ['Dress up your Microduck. Make a little mischief.', '为你的 Microduck 换一身，快乐捣个蛋。'],

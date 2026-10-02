@@ -110,6 +110,20 @@ cases.push({ id: 'accessory-region-removal', name: 'Remove only chest accessory'
 cases.push({ id: 'legacy-scalar-accessory', name: 'Legacy single accessory migration', selection: { ...emptySelection, accessory: pickAccessory('side',5) } });
 for (const region of regions) cases.push({ id: `accessory-${region}-only`, name: `Independent ${region} accessory`, selection: { ...emptySelection, accessory: { ...emptySelection.accessory, [region]: pickAccessory(region,4) } } });
 cases.push({ id: 'accessory-wrong-region', name: 'Reject accessory in a different region', selection: { ...emptySelection, accessory: { chest: pickAccessory('back',0), side: pickAccessory('chest',0), back: 'unknown-item' } } });
+// A library piece can be available for mixing without appearing in a curated
+// recipe. Exercise its actual OBJ/material/body frames in both formats too.
+const catalogAccessoryIds = new Set(outfits.flatMap(outfit => selectedItemIds(outfit.selection, 'accessory')));
+for (const item of items.filter(item => item.slot === 'accessory' && !catalogAccessoryIds.has(item.id))) {
+  cases.push({ id: `accessory-item-${item.id}`, name: `Independent ${item.en || item.name}`, selection: { ...emptySelection, accessory: { ...emptySelection.accessory, [item.region]: item.id } } });
+}
+const wingKinds = new Map(items.filter(item => item.slot === 'accessory' && item.region === 'back' && /wing/.test(item.kind)).map(item => [item.kind, item]));
+const wingChest = items.find(item => item.slot === 'accessory' && item.kind === 'instant-camera')?.id || pickAccessory('chest');
+const wingSide = items.find(item => item.slot === 'accessory' && item.kind === 'aviator-satchel')?.id || pickAccessory('side');
+const wingBody = items.find(item => item.slot === 'body' && item.kind === 'puffer')?.id || mixedSelection.body;
+for (const [kind, item] of wingKinds) cases.push({
+  id: `wing-mix-${kind}`, name: `${item.en || item.name} with three accessories`, allAccessoryRegions: true,
+  selection: { ...mixedSelection, body: wingBody, accessory: { chest: wingChest, side: wingSide, back: item.id } },
+});
 const requestedCaseIds = process.argv.find((argument) => argument.startsWith('--cases='))?.slice(8).split(',');
 if (requestedCaseIds) for (const id of requestedCaseIds) assert(cases.some((testCase) => testCase.id === id), `Unknown export validation case ${id}.`);
 const activeCases = requestedCaseIds ? cases.filter((testCase) => requestedCaseIds.includes(testCase.id)) : cases;
@@ -121,6 +135,35 @@ function parsedXml(bytes, rootName) {
   assert.equal(document.documentElement.tagName, rootName);
   return document;
 }
+
+function checkObjAsset(bytes, filename) {
+  const lines = new TextDecoder().decode(bytes).split('\n');
+  const vertices = lines.filter((line) => line.startsWith('v '));
+  const normals = lines.filter((line) => line.startsWith('vn '));
+  const uv = lines.filter((line) => line.startsWith('vt '));
+  const faces = lines.filter((line) => line.startsWith('f '));
+  assert(vertices.length >= 3 && faces.length > 0, `Empty OBJ mesh ${filename}`);
+  for (const vertex of vertices) assert(vertex.slice(2).split(' ').map(Number).every(Number.isFinite), `Non-finite vertex ${filename}`);
+  for (const normal of normals) assert(normal.slice(3).split(' ').map(Number).every(Number.isFinite), `Non-finite normal ${filename}`);
+  for (const coordinate of uv) assert(coordinate.slice(3).split(' ').map(Number).every(Number.isFinite), `Non-finite UV ${filename}`);
+  for (const face of faces) {
+    const tokens = face.slice(2).split(' ');
+    assert.equal(tokens.length, 3);
+    for (const token of tokens) {
+      const components = token.split('/');
+      assert(components.length <= 3 && components[0], `Invalid OBJ face token ${filename}: ${token}`);
+      for (const [component, value] of components.entries()) {
+        if (!value) continue;
+        const index = Number(value), count = [vertices.length,uv.length,normals.length][component];
+        assert(Number.isInteger(index) && index !== 0 && Math.abs(index) <= count, `Invalid OBJ ${['vertex','UV','normal'][component]} index ${filename}: ${token}`);
+      }
+    }
+  }
+}
+const validObjFixture = new TextEncoder().encode('v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nvn 0 0 1\nvn 0 0 1\nf 1//1 2//2 3//3\n');
+checkObjAsset(validObjFixture,'valid-normal-fixture.obj');
+const missingNormalFixture = new TextEncoder().encode(new TextDecoder().decode(validObjFixture).replace('vn 0 0 1\n',''));
+assert.throws(()=>checkObjAsset(missingNormalFixture,'missing-normal-fixture.obj'),/Invalid OBJ normal index/);
 
 function checkFiles(bundle, testCase) {
   assert(bundle.files['microduck.urdf'] && bundle.files['microduck.xml']);
@@ -180,16 +223,7 @@ function checkFiles(bundle, testCase) {
     assert(!path.posix.isAbsolute(filename) && !filename.split('/').includes('..'), `Unsafe archive entry ${filename}`);
     assert(bytes.length > 0 || filename === 'materials.mtl', `Empty asset ${filename}`);
     if (!filename.endsWith('.obj')) continue;
-    const lines = new TextDecoder().decode(bytes).split('\n');
-    const vertices = lines.filter((line) => line.startsWith('v '));
-    const faces = lines.filter((line) => line.startsWith('f '));
-    assert(vertices.length >= 3 && faces.length > 0, `Empty OBJ mesh ${filename}`);
-    for (const vertex of vertices) assert(vertex.slice(2).split(' ').map(Number).every(Number.isFinite), `Non-finite vertex ${filename}`);
-    for (const face of faces) {
-      const indices = face.slice(2).split(' ').map((element) => Number(element.split('/')[0]));
-      assert.equal(indices.length, 3);
-      assert(indices.every((index) => Number.isInteger(index) && index > 0 && index <= vertices.length), `Invalid OBJ indices ${filename}`);
-    }
+    checkObjAsset(bytes,filename);
   }
 }
 

@@ -242,10 +242,30 @@ const NEW_LOOKS = [
   ['storybook-royal','绘本小花冠','Storybook bloom','wonder','交领花衣穿好，提着灯去读新的故事。','A blossom crossed-collar robe and a lantern for a new story.','#eadce5','#bea0af',['pillbox-ribbon','round','hanfu-blossom',['pendant','lantern'],'wraps']],
 ];
 
+const ARTISAN_ACCESSORIES = [
+  ['feather-wings','月光叠层羽翼','Moonlit feather wings','wonder',['#e6dfcd','#f5eddb','#b59a73'],'back','两层轻羽依次展开，细羽轴藏着一点月光。','Layered flight feathers, slender shafts, and a little moonlight.'],
+  ['swallow-wings','流线燕尾翼','Swept swallow wings','wonder',['#506672','#b6c3bd','#d2bd95'],'back','长飞羽向后收拢，展开一段轻盈的弧线。','Swept flight feathers trace a light, tapered silhouette.'],
+  ['butterfly-wings','花园彩蝶翼','Garden butterfly wings','wonder',['#a6b8b3','#d9c6ce','#b6a37d'],'back','上下蝶翼带着细叶脉和小珍珠，轻轻拥抱花园。','Four curved lobes, branching veins, and tiny pearl-like cells.'],
+  ['dragonfly-wings','琥珀蜻蜓翼','Amber dragonfly wings','wonder',['#c5d6ce','#e8dbb9','#a99065'],'back','四片细长薄翼，像把清晨的光留在了脉络里。','Four translucent membranes hold morning light between fine veins.'],
+  ['moth-wings','暮色丝绒蛾翼','Dusk silk moth wings','wonder',['#a694ae','#d8c4b9','#81768b'],'back','宽阔的丝绸翼片和椭圆刺绣，陪你慢慢入夜。','Wide silk-like wings with pleated veins and embroidered oval marks.'],
+  ['mechanical-wings','折叠机械羽翼','Articulated metal wings','wonder',['#91a7a7','#e9e4d2','#806f55'],'back','金属枢轴、分段翼片和小铆钉，组成一对温柔的机械翼。','Brushed pivots, segmented blades, and tiny rivets in a gentle metal fan.'],
+  ['leaf-wings','森林层叶翼','Woodland leaf wings','wonder',['#839d7d','#b4c5a0','#9a845e'],'back','三层弯叶带着细细的叶脉，把微风背在身后。','Three sculpted leaf tiers and fine veins carry a woodland breeze.'],
+  ['cloud-wings','奶油层云翼','Layered cloud wings','wonder',['#e2e2d2','#f3eddd','#b1b6a5'],'back','柔和云边叠着小飞羽，像刚洗好的晴天。','Soft scalloped clouds and layered feathers for a freshly washed sky.'],
+  ['lotus-brooch','叠瓣莲花胸针','Layered lotus brooch','celebration',['#c99aa5','#eee0cf','#a69771'],'chest','弯曲莲瓣层层收拢，一颗小珍珠停在花心。','Curved petal tiers cradle a tiny pearl at the centre.'],
+  ['orbit-brooch','蛋白石轨道胸针','Opal orbit brooch','city',['#b5c6c5','#ede8d8','#b39a75'],'chest','交错金属轨道围着一颗蛋白石，别住一点灵感。','Crossing metal orbits frame one opal and a pocketful of ideas.'],
+  ['instant-camera','奶油拍立得相机','Cream instant camera','studio',['#c7b18e','#f0e4cf','#817468'],'chest','圆角机身、单镜头和小照片，把好心情当场打印。','A rounded body, one lens, and a tiny print for an instant keepsake.'],
+  ['aviator-satchel','飞行邮差挎包','Aviator mail satchel','heritage',['#ae896e','#dec6aa','#776f60'],'side','折边包盖、双搭扣和细缝线，装下一封远方的来信。','Folded leather, paired buckles, and saddle stitches for a faraway letter.'],
+  ['acorn-purse','橡果叶扣小袋','Acorn leaf-clasp purse','outdoors',['#b69a71','#d6c7a2','#788762'],'side','小橡果的鳞片帽和叶子搭扣，藏好一份森林礼物。','A sculpted acorn cap and leaf clasp keep a woodland gift safe.'],
+  ['picnic-hamper','格纹野餐提篮','Lined picnic hamper','weekend',['#b69c78','#e7d9bd','#9c9e7d'],'side','交错藤编、软布内衬和掀起的小篮盖，准备好一场野餐。','Interlaced wicker, soft lining, and an open lid ready for the picnic.'],
+  ['music-box','发条小八音盒','Clockwork music box','celebration',['#9d8067','#e4d5b9','#b19b72'],'side','木纹盒盖轻轻打开，黄铜发条把旋律藏在小滚筒里。','An open wooden lid reveals a brass key, pinned barrel, and tiny tune.'],
+  ['maps-case','折页地形地图夹','Folded contour-map case','outdoors',['#82948a','#eadfc5','#ab906c'],'side','皮夹托住三折地图，凸起的等高线带你找到下一条路。','A leather case holds three real paper folds and raised contour lines.'],
+].map(([kind,name,en,theme,palette,region,description,descriptionEn])=>({
+  id:`accessory-${kind}`,slot:'accessory',kind,name,en,theme,palette,region,description,descriptionEn,design:{},
+}));
 export const ITEMS = [...COLLECTION.flatMap(row=>row[7].flatMap((kind,index)=>kind?[{
   id:`${row[0]}-${SLOT_IDS[index]}`,slot:SLOT_IDS[index],kind,theme:row[3],palette:[...row[6]],name:NAMES[kind][0],en:NAMES[kind][1],description:row[4],descriptionEn:row[5],outfitId:row[0],
   ...(SLOT_IDS[index]==='accessory'?{region:['camera','pouch'].includes(kind)?'chest':['backpack','wings'].includes(kind)?'back':'side'}:{}),
-}]:[])), ...SHARED_ITEMS];
+}]:[])), ...SHARED_ITEMS, ...ARTISAN_ACCESSORIES];
 const BY_ITEM_ID = new Map(ITEMS.map(item=>[item.id,item]));
 export function normalizeSelection(input = {}) {
   const source = input && typeof input === 'object' ? input : {};
@@ -332,8 +352,75 @@ const EXPANDED_OUTFITS = NEW_LOOKS.map(row => {
     selection, features:recipeFeatures(selection), featuresEn:recipeFeatures(selection,true),
   };
 });
+// Thoughtful complete pairings demonstrate the new pieces without changing
+// any look ID, clothing cut, body colour, or saved item reference.
+const ACCESSORY_SHOWCASES = {
+  'moon-garden':['butterfly-wings','lotus-brooch'],
+  'library-spell':['feather-wings','orbit-brooch'],
+  'cloud-postcard':['cloud-wings','orbit-brooch'],
+  'honey-delivery':['dragonfly-wings','acorn-purse'],
+  'moon-balloon':['moth-wings','lotus-brooch'],
+  'satellite-letter':['mechanical-wings','instant-camera'],
+  'firefly-garden':['leaf-wings','lotus-brooch'],
+  'bell-jester':['swallow-wings'],
+  'forest-post':['instant-camera','aviator-satchel'],
+  'alpine-cloud':['maps-case'],
+  'farmers-market':['picnic-hamper'],
+  'tea-party-dress':['music-box'],
+  'spring-lantern':['lotus-brooch'],
+  'designer-daily':['orbit-brooch'],
+};
 // Theme order is stable; within each theme the original favourites come first.
-export const OUTFITS = THEMES.flatMap(theme => [...LEGACY_OUTFITS,...EXPANDED_OUTFITS].filter(outfit => outfit.theme === theme.id));
+export const OUTFITS = THEMES.flatMap(theme => [...LEGACY_OUTFITS,...EXPANDED_OUTFITS].filter(outfit => outfit.theme === theme.id)).map(outfit=>{
+  let selection=outfit.selection;
+  for(const kind of ACCESSORY_SHOWCASES[outfit.id]||[])selection=equipItem(selection,`accessory-${kind}`);
+  return selection===outfit.selection?outfit:{...outfit,selection,features:recipeFeatures(selection),featuresEn:recipeFeatures(selection,true)};
+});
+
+function closedKeeperTube(points,radius) {
+  const path=new THREE.CatmullRomCurve3(points,false,'centripetal'),segments=24,radial=6;
+  const geometry=new THREE.TubeGeometry(path,segments,radius,radial,false);
+  const vertices=Array.from(geometry.getAttribute('position').array),uvs=Array.from(geometry.getAttribute('uv').array),indices=Array.from(geometry.index.array);
+  const first=vertices.length/3,last=first+1;
+  vertices.push(...path.getPointAt(0).toArray(),...path.getPointAt(1).toArray());uvs.push(.5,.5,.5,.5);
+  for(let i=0;i<radial;i++){indices.push(first,i,i+1);const ring=segments*(radial+1);indices.push(last,ring+i+1,ring+i)}
+  geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);
+  // Recreate the attribute for the two new cap centres as well as the rings.
+  geometry.deleteAttribute('normal');geometry.computeVertexNormals();
+  return geometry;
+}
+function fitSideKeepers(group,bodyGroups,lift) {
+  const keepers=[],tabs=[],rivets=[];
+  group.traverse(mesh=>{
+    if(!mesh.isMesh)return;
+    if(mesh.name.endsWith(':body-side-keeper')||mesh.name.endsWith(':short-side-keeper'))keepers.push(mesh);
+    if(mesh.name.endsWith(':keeper-anchor')||mesh.name.endsWith(':side-keeper-tab'))tabs.push(mesh);
+    if(mesh.name.endsWith(':keeper-brass-rivet'))rivets.push(mesh);
+  });
+  // Keep the attachment below the collar while the bag itself clears the hip.
+  for(const mesh of[...keepers,...tabs,...rivets])mesh.position.z-=lift;
+  group.updateMatrixWorld(true);
+  for(const tab of tabs){
+    const previous=tab.getWorldPosition(new THREE.Vector3());
+    const sideRay=new THREE.Raycaster(new THREE.Vector3(previous.x,-.25,previous.z),new THREE.Vector3(0,1,0));
+    const hit=sideRay.intersectObjects(bodyGroups,true).find(intersection=>intersection.point.y<-.015);
+    const surface=Math.min(-.035,hit?.point.y||-.035),halfDepth=tab.name.endsWith(':keeper-anchor')?.0029:.0024;
+    const target=new THREE.Vector3(previous.x,surface-.0018-halfDepth,previous.z);
+    tab.position.copy(tab.parent.worldToLocal(target.clone()));tab.userData.fitSurfaceY=surface;
+    group.updateMatrixWorld(true);
+    for(const rivet of rivets){const world=rivet.getWorldPosition(new THREE.Vector3());world.y+=target.y-previous.y;rivet.position.copy(rivet.parent.worldToLocal(world))}
+    for(const keeper of keepers){
+      const legacy=keeper.name.endsWith(':body-side-keeper'),radius=legacy?.0013:.00075;
+      // The first point stays on the bag; the far end meets its body tab.
+      const current=keeper.geometry.getAttribute('position'),start=new THREE.Vector3();
+      for(let i=0;i<=6;i++)start.add(new THREE.Vector3().fromBufferAttribute(current,i));start.multiplyScalar(1/7).applyMatrix4(keeper.matrixWorld);
+      const end=target.clone(),middle=start.clone().lerp(end,.55);middle.y-=.002;
+      const local=[start,middle,end].map(point=>keeper.parent.worldToLocal(point));
+      keeper.geometry.dispose();keeper.geometry=closedKeeperTube(local,radius);keeper.position.set(0,0,0);keeper.rotation.set(0,0,0);keeper.scale.set(1,1,1);
+      keeper.userData.expectedClosedSolid=true;
+    }
+  }
+}
 export function createOutfitParts(selection={}) {
   const normalized = normalizeSelection(selection);
   const parts = SLOT_IDS.flatMap(slot=>{
@@ -352,6 +439,12 @@ export function createOutfitParts(selection={}) {
   }
   for (const part of parts) if (part.slot === 'accessory') {
     if (part.region === 'chest') {
+      // Measured across 303 actual manual/idle/jaw poses: at the bare chest
+      // plane X>=39 mm, the neck motor begins above Z=27.9 mm. Keep pins and
+      // tethers below it while preserving a close attachment to the cloth.
+      part.group.updateMatrixWorld(true);
+      const bounds=new THREE.Box3().setFromObject(part.group);
+      part.group.position.z-=Math.max(0,bounds.max.z-.0255);
       // A pin has to touch its cloth. The broad skirt envelope is unsuitable
       // here: it would leave small badges floating in front of the chest.
       const ray = new THREE.Raycaster(new THREE.Vector3(.2, part.group.position.y, part.group.position.z), new THREE.Vector3(-1, 0, 0));
@@ -364,8 +457,36 @@ export function createOutfitParts(selection={}) {
       if (!propBounds.isEmpty()) part.group.position.x += surface + .002 - propBounds.min.x;
       part.group.userData.fitSurfaceX = surface;
     }
-    if (!envelope.isEmpty() && part.region === 'side') part.group.position.y -= Math.max(0, -envelope.min.y - .053);
+    if (part.region === 'side') {
+      if (!envelope.isEmpty()) part.group.position.y -= Math.max(0, -envelope.min.y - .053);
+      // The swept upper-leg/servo surface stays below Z=-5.481 mm in those
+      // same poses. Lifting a low prop clears the joint without moving the
+      // whole side region away from the robot or enlarging any native mesh.
+      part.group.updateMatrixWorld(true);
+      const bounds=new THREE.Box3().setFromObject(part.group),lift=Math.max(0,-.003-bounds.min.z);
+      part.group.position.z+=lift;part.group.userData.fitLiftZ=lift;
+      fitSideKeepers(part.group,bodyGroups,lift);
+    }
     if (!envelope.isEmpty() && part.region === 'back') part.group.position.x -= Math.max(0, -envelope.min.x - .062);
+    if (part.group.userData.wingAssembly) {
+      // The blades stay behind the broad garment envelope. Two short rigid
+      // keepers meet the actual local cloth surface, giving the wing root a
+      // visible connection without straps near the neck or its actuators.
+      part.group.updateMatrixWorld(true);
+      const contacts=[],bridges=[];
+      part.group.traverse(mesh=>{if(mesh.userData.wingContact)contacts.push(mesh);if(mesh.userData.wingBridge)bridges.push(mesh)});
+      for(const contact of contacts){
+        const position=contact.getWorldPosition(new THREE.Vector3());
+        const rearRay=new THREE.Raycaster(new THREE.Vector3(-.25,position.y,position.z),new THREE.Vector3(1,0,0));
+        const hit=rearRay.intersectObjects(bodyGroups,true).find(intersection=>intersection.point.x<-.015);
+        const surface=Math.min(-.050,hit?.point.x||-.050);
+        const target=new THREE.Vector3(surface-.0018-contact.userData.wingContact.halfDepth,position.y,position.z);
+        contact.position.copy(part.group.worldToLocal(target));
+        const bridge=bridges.find(mesh=>mesh.userData.wingBridge.side===contact.userData.wingContact.side);
+        if(bridge){const end=bridge.userData.wingBridge.bladeX;bridge.position.x=(contact.position.x+end)/2;bridge.scale.y=Math.abs(end-contact.position.x)}
+        contact.userData.fitSurfaceX=surface;
+      }
+    }
     part.group.userData.fitTranslation = part.group.position.toArray();
   }
   return parts;

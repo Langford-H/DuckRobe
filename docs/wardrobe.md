@@ -2,11 +2,13 @@
 
 100 complete Microduck looks in 10 collections, with 10 looks per collection. Ninety looks draw on everyday clothing, workwear, travel, sport and celebrations; ten add a little fantasy. The original 24 look IDs and all 112 original item IDs remain compatible with saved wardrobes.
 
-The library contains 190 selectable items. The 78 additions are shared design objects, not per-look colour clones: 32 bodies with real cut, sleeve, hem and closure differences; 14 hats; 5 legwear types; and 27 accessories. Existing colour versions retain their IDs for compatibility. New recipes reuse these objects instead of creating duplicates.
+The library contains 206 selectable items. The 94 additions are shared design objects, not per-look colour clones: 32 bodies with real cut, sleeve, hem and closure differences; 14 hats; 5 legwear types; and 43 accessories. Existing colour versions retain their IDs for compatibility. New recipes reuse these objects instead of creating duplicates.
 
 ## Structural vocabulary
 
 Body templates added: duffle, biker, wrap-dress, pleated-dress, poncho, jersey, hanfu, fleece, bolero, quilted-jacket, tunic, shell-vest, balloon-dress, capelet, rugby and workshirt. Hat templates added: cloche, pillbox, trapper, boater, bonnet, cycling and jester. Legwear added: Mary Janes, moccasins, chunky sneakers, crossed ankle wraps and knee guards.
+
+Wing forms include layered flight feathers, swept swallow wings, four-lobed butterfly wings, translucent dragonfly membranes, broad moth wings, segmented metal blades, sculpted leaves and scalloped clouds. Their closed curved panels have raised veins, feather shafts or small hinge details. Eight other crafted accessories add a layered lotus brooch, opal orbit brooch, instant camera, stitched mail satchel, acorn purse, lined picnic hamper, clockwork music box and folded contour-map case. The older little-wing item IDs remain available with the upgraded butterfly construction.
 
 `item.design` records authored cut, hem, sleeve, closure, detail and pattern options. Hat tilt is in degrees. These fields are consumed by the geometry factory; colours do not establish a new design. Each recipe includes Chinese and English descriptions/features plus an explicitly chosen shell/accent colour pair for the original robot.
 
@@ -15,7 +17,7 @@ Body templates added: duffle, biker, wrap-dress, pleated-dress, poncho, jersey, 
 | hat | 38 | 31 |
 | eyewear | 19 | 6 |
 | body | 56 | 40 |
-| accessory | 49 | 38 |
+| accessory | 65 | 54 |
 | legwear | 28 | 14 |
 
 ## Selection contract
@@ -27,7 +29,9 @@ Body templates added: duffle, biker, wrap-dress, pleated-dress, poncho, jersey, 
 
 `normalizeSelection` migrates a legacy scalar accessory ID into its authored region. Unknown IDs, wrong slots and IDs placed in the wrong region become null. `equipItem` replaces only the matching clothing slot or accessory region; `removeItem` removes only the named item. `selectedItemIds` flattens the canonical selection, and `selectionKey` produces a stable key. UI state, saved looks, geometry generation and exports share these functions.
 
-Accessories occupy chest, right side or back. A look can contain zero to three; 19 selected looks combine all three regions. The geometry wrapper retains the region on both the returned part and `group.userData`. Chest pieces are pinned to the actual garment surface, found by a ray cast from the front, with a 2 mm allowance; an open or removed garment uses the native trunk front allowance. Side and back objects move outward from the selected garment envelope when required. Web preview and export use the same transformations.
+Accessories occupy chest, right side or back: 16, 32 and 17 selectable items respectively. A look can contain zero to three; 22 selected looks combine all three regions. A pair of wings is one back-region item, leaving chest and side available. The geometry wrapper retains the region on both the returned part and `group.userData`.
+
+Chest pieces sit below the neck assembly and are pinned to the actual garment surface, found by a ray cast from the front, with a 2 mm allowance; an open or removed garment uses the native trunk front allowance. Side pieces are lifted above the hip motors, while short keepers retain their body attachment height and fit to ray-cast local cloth surfaces. Side and back objects move outward from the selected garment envelope when required. Wing panels stay behind that envelope, while two short rear keepers connect the root to ray-cast local garment surfaces, or the native back allowance when clothing is absent. The assembly follows the real trunk mount. Web preview and export use the same transformations.
 
 ## Complete recipe catalogue
 
@@ -51,8 +55,8 @@ Accessories occupy chest, right side or back. A look can contain zero to three; 
 | Look / ID | Body silhouette | Chest · Side · Back | Robot shell / accent |
 |---|---|---|---|
 | 雨天约定 / Rain check · `rain-check` | 双层雨披 | 腰间小包 · — · — | `#f0d69a` / `#af8749` |
-| 山间云朵 / Alpine cloud · `alpine-cloud` | 绗缝羽绒马甲 | — · — · 翻盖小背包 | `#dce4d6` / `#99b4aa` |
-| 森林来信 / Forest post · `forest-post` | 口袋风衣 | 复古小相机 · — · — | `#dfe1c4` / `#be966c` |
+| 山间云朵 / Alpine cloud · `alpine-cloud` | 绗缝羽绒马甲 | — · 折页地形地图夹 · 翻盖小背包 | `#dce4d6` / `#99b4aa` |
+| 森林来信 / Forest post · `forest-post` | 口袋风衣 | 奶油拍立得相机 · 飞行邮差挎包 · — | `#dfe1c4` / `#be966c` |
 | 野外笔记 / Safari notes · `safari-notes` | 探险马甲 | 腰间小包 · — · — | `#eee0c0` / `#ac936a` |
 | 橄榄小菱格 / Olive quilt · `olive-quilt` | 橄榄菱格夹克 (cut:regular, closure:zip, detail:quilted, sleeve:raglan) | — · 双筒小望远镜 · 翻盖小背包 | `#dce3cd` / `#a8a076` |
 | 山径小侦察 / Trail scout · `trail-duffle` | 短款侦察牛角扣 (cut:cropped, closure:toggle, detail:patches, hem:asymmetric) | 腰间小包 · — · 盘绕登山绳 | `#d5dfd0` / `#b6956b` |
@@ -118,14 +122,14 @@ Accessories occupy chest, right side or back. A look can contain zero to three; 
 | 车站小风衣 / Station parka · `station-parka` | 口袋风衣 | 腰间小包 · 带绳小保温瓶 · 翻盖小背包 | `#d9e0c7` / `#b6a073` |
 | 街角民谣 / Street-corner folk · `busking-day` | 软皮落肩夹克 (cut:regular, closure:zip, sleeve:raglan, detail:pockets) | 花朵小胸针 · 木纹小吉他 · 弧线吉他背盒 | `#e6d2bf` / `#b88d72` |
 | 天台学院风 / Rooftop college · `rooftop-rugby` | 学院拼章橄榄球衫 (cut:long, sleeve:raglan, detail:patches, closure:buttons) | 快乐队员奖章 · 便当小饭盒 · — | `#e1d0d7` / `#b58a91` |
-| 设计师日常 / Designer daily · `designer-daily` | 亚麻不对称长衫 (cut:long, hem:asymmetric, sleeve:short, closure:buttons) | 云朵小挂章 · 帆布手提包 · — | `#efdfc3` / `#bca17b` |
+| 设计师日常 / Designer daily · `designer-daily` | 亚麻不对称长衫 (cut:long, hem:asymmetric, sleeve:short, closure:buttons) | 蛋白石轨道胸针 · 帆布手提包 · — | `#efdfc3` / `#bca17b` |
 | 夜场小电影 / Late movie · `late-movie` | 橄榄菱格夹克 (cut:regular, closure:zip, detail:quilted, sleeve:raglan) | 胸前小领巾 · 外带咖啡 · — | `#dfe5ce` / `#b3a078` |
 
 ### 周末小旅行 · Little weekends
 
 | Look / ID | Body silhouette | Chest · Side · Back | Robot shell / accent |
 |---|---|---|---|
-| 周末菜篮子 / Farmers market · `farmers-market` | 格纹交叠短裙 (cut:regular, closure:bow, sleeve:short, pattern:check) | 花朵小胸针 · 编织小提篮 · — | `#e5e4cc` / `#baa477` |
+| 周末菜篮子 / Farmers market · `farmers-market` | 格纹交叠短裙 (cut:regular, closure:bow, sleeve:short, pattern:check) | 花朵小胸针 · 格纹野餐提篮 · — | `#e5e4cc` / `#baa477` |
 | 海边平顶帽 / Seaside boater · `seaside-boater` | 海盐条纹衫 | 奶油小领结 · 双筒小望远镜 · — | `#e1e7e4` / `#b6a27c` |
 | 野餐小口袋 / Picnic pocket · `picnic-pocket` | 莓果无袖灯笼裙 (cut:long, hem:bubble, sleeve:none, detail:pleats) | 珍珠小吊坠 · 便当小饭盒 · 绑带野餐毯 | `#e7d5d9` / `#b99291` |
 | 书店下午茶 / Bookshop tea · `bookstore-tea` | 交叠茶歇裙 (cut:long, closure:wrap, sleeve:bell, hem:asymmetric) | 缎带纪念胸针 · 口袋小书 · — | `#f1dcdb` / `#c29895` |
@@ -156,11 +160,11 @@ Accessories occupy chest, right side or back. A look can contain zero to three; 
 | Look / ID | Body silhouette | Chest · Side · Back | Robot shell / accent |
 |---|---|---|---|
 | 生日泡泡愿 / Birthday bubbles · `birthday-bubble` | 泡泡生日裙 (cut:regular, hem:bubble, sleeve:puff, closure:bow) | 缎带纪念胸针 · 春日小花束 · — | `#f2dfe4` / `#cba0ad` |
-| 春灯小花枝 / Blossom lantern · `spring-lantern` | 花枝交领汉服 (cut:long, sleeve:bell, closure:wrap, pattern:petals) | 珍珠小吊坠 · 缎边小灯笼 · — | `#efd8dd` / `#c28e98` |
+| 春灯小花枝 / Blossom lantern · `spring-lantern` | 花枝交领汉服 (cut:long, sleeve:bell, closure:wrap, pattern:petals) | 叠瓣莲花胸针 · 缎边小灯笼 · — | `#efd8dd` / `#c28e98` |
 | 新年小喜帖 / New-year note · `new-year-note` | 短款灯会交领衫 (cut:cropped, sleeve:short, closure:wrap, hem:asymmetric) | 奶油小领结 · 折叠纸扇 · — | `#f2e2b8` / `#cba66a` |
 | 芭蕾小演出 / Ballet recital · `ballet-recital` | 泡泡袖芭蕾小外套 (cut:cropped, sleeve:puff, closure:bow, hem:scallop) | 花朵小胸针 · 舞台小麦克风 · — | `#f0dce3` / `#c498a4` |
 | 俱乐部纪念日 / Club anniversary · `club-anniversary` | 校园棒球外套 | 快乐队员奖章 · 便当小饭盒 · 纸鸢背部小架 | `#dee5ce` / `#b9a278` |
-| 茶会百褶裙 / Tea-party pleats · `tea-party-dress` | 画廊百褶长裙 (cut:long, detail:pleats, sleeve:none, closure:buttons) | 链条怀表 · 外带咖啡 · — | `#e7dfea` / `#b7a3b8` |
+| 茶会百褶裙 / Tea-party pleats · `tea-party-dress` | 画廊百褶长裙 (cut:long, detail:pleats, sleeve:none, closure:buttons) | 链条怀表 · 发条小八音盒 · — | `#e7dfea` / `#b7a3b8` |
 | 节日小爵士 / Festival jazz · `festival-jazz` | 喇叭袖爵士短衫 (cut:cropped, sleeve:bell, closure:buttons, detail:ruffles) | 缎带纪念胸针 · 舞台小麦克风 · — | `#e6d9e7` / `#b7a0ba` |
 | 草地小庆祝 / Picnic party · `picnic-party` | 格纹交叠短裙 (cut:regular, closure:bow, sleeve:short, pattern:check) | 奶油小领结 · 编织小提篮 · 绑带野餐毯 | `#e4e4ce` / `#baa87c` |
 | 果园小宴会 / Orchard banquet · `orchard-banquet` | 莓果无袖灯笼裙 (cut:long, hem:bubble, sleeve:none, detail:pleats) | 花朵小胸针 · 春日小花束 · — | `#ecd8df` / `#bd9299` |
@@ -170,21 +174,23 @@ Accessories occupy chest, right side or back. A look can contain zero to three; 
 
 | Look / ID | Body silhouette | Chest · Side · Back | Robot shell / accent |
 |---|---|---|---|
-| 月亮花园 / Moon garden · `moon-garden` | 叠层花瓣裙 | — · — · 轻盈小翅膀 | `#e8d9e8` / `#c8ac77` |
-| 图书馆魔法 / Library spell · `library-spell` | 垂褶星空斗篷 | — · 口袋小书 · — | `#ddd9e6` / `#c3aa74` |
-| 云间明信片 / Cloud postcard · `cloud-postcard` | 交叠小和服 | — · 星星小挂饰 · — | `#e0e9e5` / `#b6a9bb` |
-| 蜂蜜派送 / Honey delivery · `honey-delivery` | 蜂蜜花边围裙 | — · — · 轻盈小翅膀 | `#f1dda4` / `#c59a51` |
-| 月光小灯笼裙 / Moon balloon · `moon-balloon` | 莓果无袖灯笼裙 (cut:long, hem:bubble, sleeve:none, detail:pleats) | 珍珠小吊坠 · 星星小挂饰 · 轻盈小翅膀 | `#e8dce9` / `#baa6c1` |
+| 月亮花园 / Moon garden · `moon-garden` | 叠层花瓣裙 | 叠瓣莲花胸针 · — · 花园彩蝶翼 | `#e8d9e8` / `#c8ac77` |
+| 图书馆魔法 / Library spell · `library-spell` | 垂褶星空斗篷 | 蛋白石轨道胸针 · 口袋小书 · 月光叠层羽翼 | `#ddd9e6` / `#c3aa74` |
+| 云间明信片 / Cloud postcard · `cloud-postcard` | 交叠小和服 | 蛋白石轨道胸针 · 星星小挂饰 · 奶油层云翼 | `#e0e9e5` / `#b6a9bb` |
+| 蜂蜜派送 / Honey delivery · `honey-delivery` | 蜂蜜花边围裙 | — · 橡果叶扣小袋 · 琥珀蜻蜓翼 | `#f1dda4` / `#c59a51` |
+| 月光小灯笼裙 / Moon balloon · `moon-balloon` | 莓果无袖灯笼裙 (cut:long, hem:bubble, sleeve:none, detail:pleats) | 叠瓣莲花胸针 · 星星小挂饰 · 暮色丝绒蛾翼 | `#e8dce9` / `#baa6c1` |
 | 云端小纸鸢 / Cloud kite · `cloud-kite` | 云边波浪雨披 (cut:regular, hem:scallop, closure:bow, pattern:dots) | 云朵小挂章 · 折叠纸扇 · 纸鸢背部小架 | `#dfeceb` / `#b8b4ad` |
-| 铃铛小奇遇 / Bell jester · `bell-jester` | 波浪边小斗篷 (cut:cropped, hem:scallop, closure:bow, detail:ruffles) | 缎带纪念胸针 · 星星小挂饰 · — | `#e5d9ec` / `#b69dbe` |
-| 卫星小来信 / Satellite letter · `satellite-letter` | 轻量骑行风壳 (cut:cropped, sleeve:none, closure:zip, hem:asymmetric) | 云朵小挂章 · 口袋小书 · 迷你卫星背包 | `#dfeae7` / `#b5a7a1` |
-| 萤火小花园 / Firefly garden · `firefly-garden` | 拼布喇叭袖罩衫 (cut:regular, sleeve:bell, detail:patches, hem:scallop) | 花朵小胸针 · 春日小花束 · 轻盈小翅膀 | `#e3e8d4` / `#baa682` |
+| 铃铛小奇遇 / Bell jester · `bell-jester` | 波浪边小斗篷 (cut:cropped, hem:scallop, closure:bow, detail:ruffles) | 缎带纪念胸针 · 星星小挂饰 · 流线燕尾翼 | `#e5d9ec` / `#b69dbe` |
+| 卫星小来信 / Satellite letter · `satellite-letter` | 轻量骑行风壳 (cut:cropped, sleeve:none, closure:zip, hem:asymmetric) | 奶油拍立得相机 · 口袋小书 · 折叠机械羽翼 | `#dfeae7` / `#b5a7a1` |
+| 萤火小花园 / Firefly garden · `firefly-garden` | 拼布喇叭袖罩衫 (cut:regular, sleeve:bell, detail:patches, hem:scallop) | 叠瓣莲花胸针 · 春日小花束 · 森林层叶翼 | `#e3e8d4` / `#baa682` |
 | 绘本小花冠 / Storybook bloom · `storybook-royal` | 花枝交领汉服 (cut:long, sleeve:bell, closure:wrap, pattern:petals) | 珍珠小吊坠 · 缎边小灯笼 · — | `#eadce5` / `#bea0af` |
 
 ## Verification
 
-Catalogue checks confirm exactly 100 unique canonical recipes, 10 looks in each theme, 190 unique item IDs, and shell/accent plus bilingual feature metadata on every look. Compatibility checks cover legacy scalar accessory migration, region-preserving equip/remove, unknown and wrong-slot rejection, and caller input immutability.
+Catalogue checks confirm exactly 100 unique canonical recipes, 10 looks in each theme, 206 unique item IDs, and shell/accent plus bilingual feature metadata on every look. Compatibility checks cover legacy scalar accessory migration, region-preserving equip/remove, unknown and wrong-slot rejection, and caller input immutability.
 
 The 100 recipes also have 100 distinct combinations of slot/kind plus accessory-region/kind, even when all colours, names, design parameters, hat tilt and fit offsets are ignored. Their count therefore does not depend on recolours or tiny geometric adjustments.
 
-The complete 100-look geometry smoke check generated every selected item, retained every accessory region, and found finite positions and normals throughout. Position-plus-transform hashes, excluding materials and colours, were distinct for all 100 recipes. The checked factory snapshot produced 45–178 meshes per look. All 75 chest attachments in the recipes measured the intended 2 mm gap at their fitting surface. This verifies catalogue coverage and accidental duplication; the visual contact sheets assess the actual fashion silhouettes. Export compilation and motion/ground-support validation run separately against the current factories.
+The complete 100-look geometry check builds every selected item, checks accessory-region metadata and rejects non-finite positions or normals. It compares position-plus-transform hashes, excluding materials and colours, to detect duplicate geometry across the recipes. This verifies catalogue coverage and accidental duplication; the visual contact sheets assess the actual fashion silhouettes. Export compilation and motion/ground-support validation run separately against the current factories.
+
+`node scripts/validate-accessory-fit.mjs` checks actual native triangles, surface clearance and closed-solid containment in both directions. It covers standalone accessories, catalogue combinations and stated wing contexts with garments and all three accessory regions. Movement checks use finite samples from all 16 manual actions and 120 seconds of autonomous idle, including the visual jaw. Wing visibility is sampled from one front three-quarter view. These checks do not establish continuous-motion clearance, visibility from every angle or every possible cross-slot combination.

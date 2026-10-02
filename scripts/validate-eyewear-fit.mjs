@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Box3, Matrix4, Quaternion, Ray, Triangle, Vector3 } from 'three';
 import { loadRobot } from '../src/robot.js';
+import { MAX_VISUAL_JAW_OPEN } from '../src/behavior.js';
 import { ITEMS, createOutfitParts } from '../src/outfits.js';
 
 const publicRoot = path.resolve('public');
@@ -118,7 +119,7 @@ const threshold = .0008, items = ITEMS.filter(item => item.slot === 'eyewear');
 const report = { coordinateFrame: 'jaw_soft outfit anchor, metres, +X front / +Z up in DEFAULT_POSE',
   method: 'Actual native GLB triangles vs generated eyewear triangles; BVH candidate pruning, segment-triangle intersections, vertex-face and edge-edge minimum distance. AABBs are only bounds, not collision evidence.',
   minimumRequiredClearance: threshold, states: [], result: 'passed' };
-for (const jawAngle of [0, .12]) {
+for (const jawAngle of [0, .12, MAX_VISUAL_JAW_OPEN]) {
   jawPivot.quaternion.setFromAxisAngle(jawAxis, jawAngle); rig.group.updateMatrixWorld(true);
   const inverseAnchor = anchor.matrixWorld.clone().invert(), headTriangles = [], nativeBounds = [];
   head.traverse(mesh => {

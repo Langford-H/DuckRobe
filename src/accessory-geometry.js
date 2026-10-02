@@ -1,9 +1,148 @@
 import * as THREE from 'three';
 import { PI, mat, add, ellipsoid, tube, disk, softBox, facePatch, star, flower } from './garment-primitives.js';
+import { ARTISAN_KINDS, createArtisanAccessory } from './artisan-accessories.js';
 
 const ALIASES = { cup: 'coffee', 'belt-pouch': 'pouch', paintbox: 'paint-palette', 'flower-basket': 'basket', rollmat: 'rolled-blanket' };
 const CHEST = new Set(['camera','pouch','neck-scarf','bow-tie','pendant','medal','pocketwatch','brooch','ribbon-pin','charm']);
 const BACK = new Set(['backpack','wings','rolled-blanket','rope-coil','mini-kite','garden-pack','guitarcase','satellite-pack']);
+export const WING_KINDS = new Set(['wings','feather-wings','swallow-wings','butterfly-wings','dragonfly-wings','moth-wings','mechanical-wings','leaf-wings','cloud-wings']);
+
+// Thin, closed curved surfaces rather than flattened plush ellipsoids. Both
+// faces, the edge thickness, raised veins and feather shafts survive OBJ.
+function curvedWingPanel(g,material,outline,{side=1,x=.003,camber=.003,sweep=.002,thickness=.0011,name='wing-panel',subdivisions=1}={}) {
+  const curve=new THREE.CatmullRomCurve3(outline.map(([y,z])=>new THREE.Vector3(y*side,z,0)),true,'centripetal');
+  let contour=curve.getPoints(48).slice(0,-1).map(p=>new THREE.Vector2(p.x,p.y));
+  if(THREE.ShapeUtils.isClockWise(contour))contour.reverse();
+  const points=contour.map(p=>[p.x,p.y]),pointIndex=new Map(points.map((p,i)=>[p.map(v=>v.toFixed(11)).join(','),i]));
+  let faces=THREE.ShapeUtils.triangulateShape(contour,[]);
+  const point=(p)=>{const key=p.map(v=>v.toFixed(11)).join(',');if(pointIndex.has(key))return pointIndex.get(key);const index=points.length;points.push(p);pointIndex.set(key,index);return index};
+  for(let level=0;level<subdivisions;level++)faces=faces.flatMap(([a,b,c])=>{
+    const ab=point(points[a].map((v,i)=>(v+points[b][i])/2)),bc=point(points[b].map((v,i)=>(v+points[c][i])/2)),ca=point(points[c].map((v,i)=>(v+points[a][i])/2));
+    return[[a,ab,ca],[ab,b,bc],[ca,bc,c],[ab,bc,ca]];
+  });
+  const ys=contour.map(p=>Math.abs(p.x)),zs=contour.map(p=>p.y),minY=Math.min(...ys),maxY=Math.max(...ys),minZ=Math.min(...zs),maxZ=Math.max(...zs);
+  const surface=(y,z)=>{
+    const u=THREE.MathUtils.clamp((Math.abs(y)-minY)/(maxY-minY),0,1),v=THREE.MathUtils.clamp((z-minZ)/(maxZ-minZ),0,1);
+    return x+sweep*u+camber*Math.sin(PI*u)*Math.sin(PI*v);
+  };
+  const vertices=[],indices=[],count=points.length;
+  for(const layer of[0,1])for(const[y,z]of points)vertices.push(surface(y,z)-layer*thickness,y,z);
+  for(const[a,b,c]of faces){indices.push(a,b,c,a+count,c+count,b+count)}
+  // Midpoints also subdivide the boundary; close every boundary segment.
+  const boundary=[];
+  for(let i=0;i<contour.length;i++){
+    const a=points[i],b=points[(i+1)%contour.length],steps=2**subdivisions;
+    for(let j=0;j<steps;j++)boundary.push(point(a.map((v,k)=>THREE.MathUtils.lerp(v,b[k],j/steps))));
+  }
+  for(let i=0;i<boundary.length;i++){const a=boundary[i],b=boundary[(i+1)%boundary.length];indices.push(a,a+count,b,b,a+count,b+count)}
+  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geometry.setIndex(indices);geometry.computeVertexNormals();geometry.computeBoundingBox();
+  const mesh=add(g,geometry,material,[0,0,0],[0,0,0],[1,1,1],name);mesh.userData.closedWingSurface=true;
+  return{surface,contour:contour.map(p=>[p.x,p.y]),outline:curve.getPoints(64).slice(0,-1).map(p=>[p.x,p.y])};
+}
+function wingLine(g,material,panel,points,r=.00032,name='wing-vein') {
+  return tube(g,material,points.map(([y,z])=>[panel.surface(y,z)+.00038,y,z]),r,name,Math.max(12,points.length*6));
+}
+function wingBinding(g,material,panel,r=.00038,name='wing-panel-binding') {
+  return tube(g,material,panel.outline.map(([y,z])=>[panel.surface(y,z)+.00018,y,z]),r,name,64,true);
+}
+function feather(g,material,trim,root,tip,width,{side=1,x=.004,sweep=.004,barbs=false,name='layered-feather'}={}) {
+  const dy=tip[0]-root[0],dz=tip[1]-root[1],length=Math.hypot(dy,dz),ny=-dz/length,nz=dy/length;
+  const half=t=>width*Math.sin(PI*t)**.67*(.90+.10*t);
+  const edge=(t,s)=>[root[0]+dy*t+ny*half(t)*s,root[1]+dz*t+nz*half(t)*s];
+  const outline=[edge(0,0),...[.10,.28,.48,.68,.84,.95].map(t=>edge(t,1)),edge(1,0),...[.95,.84,.68,.48,.28,.10].map(t=>edge(t,-1))];
+  const panel=curvedWingPanel(g,material,outline,{side,x,sweep,camber:.0017,thickness:.00095,name,subdivisions:1});
+  wingLine(g,trim,panel,Array.from({length:10},(_,i)=>{const t=.05+i/9*.9;return[(root[0]+dy*t)*side,root[1]+dz*t]}),.00027,'feather-rachis');
+  if(barbs)for(const sign of[-1,1])for(const t of[.28,.44,.60,.74]){
+    const end=edge(Math.min(.92,t+.10),sign);
+    wingLine(g,trim,panel,[[side*(root[0]+dy*t),root[1]+dz*t],[end[0]*side,end[1]]],.00015,'feather-barb');
+  }
+  return panel;
+}
+function wingMount(g,material,metal) {
+  softBox(g,material,[.0015,0,.004],[.006,.025,.024],.004,'wing-root-plate');
+  for(const s of[-1,1]){
+    disk(g,metal,[.005,s*.009,.005],.0038,.0020,'wing-hinge');disk(g,material,[.0065,s*.009,.005],.0016,.0010,'hinge-rivet');
+    const contact=softBox(g,material,[-.013,s*.011,.002],[.003,.010,.014],.002,'wing-cloth-contact-pad');
+    contact.userData.wingContact={side:s,halfDepth:.0019};
+    const beam=add(g,new THREE.CylinderGeometry(.0016,.0016,1,16),metal,[-.0055,s*.011,.002],[0,0,-PI/2],[1,.017,1],'wing-keeper-standoff');
+    beam.userData.wingBridge={side:s,bladeX:.002};
+  }
+  g.userData.wingAssembly=true;
+}
+function tailoredWings(g,item,materials) {
+  const[a,b,c,metal]=materials,k=item.kind==='wings'?'butterfly-wings':item.kind;
+  wingMount(g,c,metal);
+  if(k==='feather-wings'){
+    for(const side of[-1,1]){
+      const tips=[[.058,.064],[.067,.070],[.077,.066],[.087,.056],[.094,.044],[.096,.030]];
+      tips.forEach((tip,i)=>feather(g,i%3===1?b:a,c,[.016+i*.001,.007-i*.001],tip,.008,{side,x:.004+i*.0003,sweep:.004,barbs:i%2===0}));
+      for(let i=0;i<4;i++)feather(g,b,c,[.018+i*.003,.007],[.048+i*.009,.028-i*.005],.008,{side,x:.009,sweep:.002,name:'overlapping-covert-feather'});
+    }
+  }else if(k==='swallow-wings'){
+    for(const side of[-1,1]){
+      const panel=curvedWingPanel(g,a,[[.015,.006],[.034,.047],[.073,.055],[.096,.034],[.081,.027],[.051,.001],[.025,-.006]],{side,x:.004,sweep:.004,camber:.004,name:'swept-swallow-wing-panel'});
+      wingBinding(g,c,panel,.0004,'swallow-leading-edge');
+      for(let i=0;i<5;i++)feather(g,i%2?b:a,c,[.028+i*.002,.007], [.071+i*.005,.033-i*.009],.0052,{side,x:.009+i*.00035,sweep:.005,name:'swept-flight-feather'});
+    }
+  }else if(k==='butterfly-wings'){
+    for(const side of[-1,1])for(const lower of[false,true]){
+      const outline=lower?[[.016,.005],[.043,.014],[.079,.018],[.086,-.002],[.058,-.024],[.035,-.021],[.020,-.007]]:[[.015,.006],[.024,.039],[.052,.070],[.078,.066],[.095,.039],[.082,.022],[.046,.010],[.022,.001]];
+      const panel=curvedWingPanel(g,lower?b:a,outline,{side,x:lower?.007:.003,camber:lower?.004:.005,sweep:.003,thickness:.0011,name:lower?'butterfly-lower-wing-panel':'butterfly-upper-wing-panel'});
+      wingBinding(g,c,panel,.00042,'butterfly-bound-edge');
+      const tips=lower?[[.047,-.019],[.072,-.008],[.080,.009]]:[[.044,.055],[.060,.061],[.079,.045],[.087,.034]];
+      for(const[y,z]of tips)wingLine(g,c,panel,[[side*.021,.007],[side*(.022+(y-.022)*.44),z*.45+.004],[side*y,z]],.00030,'branching-butterfly-vein');
+      if(!lower)for(const[y,z]of[[.046,.046],[.060,.052],[.077,.039]]){
+        const centre=[panel.surface(side*y,z)+.0006,side*y,z];ellipsoid(g,b,centre,[.0007,.0022,.003],'butterfly-pearl-cell');
+      }
+    }
+  }else if(k==='dragonfly-wings'){
+    const membrane=mat(item.palette[0],{transparent:true,opacity:.74,roughness:.48,metalness:.05,depthWrite:false});
+    for(const side of[-1,1])for(const lower of[false,true]){
+      const outline=lower?[[.016,.001],[.043,.010],[.085,.002],[.095,-.011],[.075,-.017],[.040,-.007],[.020,-.005]]:[[.014,.008],[.043,.039],[.086,.050],[.098,.044],[.086,.029],[.050,.020],[.021,.008]];
+      const panel=curvedWingPanel(g,membrane,outline,{side,x:lower?.009:.003,camber:.0024,sweep:.004,name:'dragonfly-wing-membrane'});wingBinding(g,c,panel,.00033,'dragonfly-leading-edge');
+      const root=[side*.020,lower?-.002:.010],tip=[side*.087,lower?-.007:.040];wingLine(g,c,panel,[root,[side*.054,lower?-.002:.029],tip],.00042,'dragonfly-wing-spar');
+      for(let i=0;i<6;i++){const y=.033+i*.009,z=lower?-.001-i*.001:.018+i*.0037;wingLine(g,b,panel,[[side*(y-.004),z-.005],[side*y,z],[side*(y+.003),z+.006]],.00020,'fine-dragonfly-cross-vein')}
+    }
+  }else if(k==='moth-wings'){
+    for(const side of[-1,1]){
+      const panel=curvedWingPanel(g,a,[[.015,.005],[.032,.046],[.061,.063],[.087,.040],[.096,.006],[.082,-.014],[.060,-.020],[.037,-.010],[.020,-.006]],{side,x:.004,camber:.005,sweep:.003,name:'moth-silk-wing-panel'});
+      wingBinding(g,b,panel,.00055,'moth-scalloped-binding');
+      for(let i=0;i<5;i++)wingLine(g,c,panel,[[side*.022,.010],[side*(.040+i*.007),.031-i*.008],[side*(.061+i*.005),.045-i*.012]],.00024,'moth-pleated-vein');
+      const y=side*.064,z=.024,x=panel.surface(y,z)+.00075;
+      roundLoop(g,b,[x,y,z],.008,.011,.0008,'moth-embroidered-oval');roundLoop(g,c,[x+.0002,y,z],.005,.007,.0005,'moth-inner-oval');ellipsoid(g,b,[x+.0001,y,z],[.0007,.0030,.0046],'moth-satin-mark');
+    }
+  }else if(k==='mechanical-wings'){
+    const steel=mat(item.palette[0],{metalness:.43,roughness:.48}),ceramic=mat(item.palette[1],{metalness:.16,roughness:.60});
+    for(const side of[-1,1]){
+      const spars=[[[.017,.006],[.046,.029],[.075,.048]],[[.018,.005],[.048,.010],[.081,.016]]];
+      for(const spar of spars)tube(g,metal,spar.map(([y,z])=>[.005,y*side,z]),.0019,'articulated-wing-spar',18);
+      for(const[y,z]of[[.018,.006],[.046,.029]]){disk(g,metal,[.007,side*y,z],.0041,.0023,'mechanical-wing-pivot');disk(g,c,[.0085,side*y,z],.0019,.0011,'pivot-cap')}
+      const tips=[[.069,.066],[.082,.056],[.094,.043],[.094,.026],[.087,.009]];
+      tips.forEach((tip,i)=>{
+        const root=[.029+i*.001,.012],dy=tip[0]-root[0],dz=tip[1]-root[1],len=Math.hypot(dy,dz),ny=-dz/len,nz=dy/len,width=.0058;
+        const outline=[[root[0]+ny*width*.5,root[1]+nz*width*.5],[root[0]+dy*.60+ny*width,root[1]+dz*.60+nz*width],[tip[0]+ny*width*.5,tip[1]+nz*width*.5],tip,[tip[0]-ny*width*.5,tip[1]-nz*width*.5],[root[0]-ny*width*.5,root[1]-nz*width*.5]];
+        const panel=curvedWingPanel(g,i%2?ceramic:steel,outline,{side,x:.011+i*.0006,sweep:.002,camber:.0011,thickness:.0013,name:'segmented-mechanical-wing-blade'});
+        wingLine(g,b,panel,[[side*(root[0]+dy*.20),root[1]+dz*.20],[side*(root[0]+dy*.88),root[1]+dz*.88]],.00045,'wing-blade-inlay');
+        for(const t of[.25,.40]){const y=side*(root[0]+dy*t),z=root[1]+dz*t;disk(g,c,[panel.surface(y,z)+.0006,y,z],.0007,.0006,'wing-blade-rivet')}
+      });
+    }
+  }else if(k==='leaf-wings'){
+    for(const side of[-1,1])for(let i=0;i<3;i++){
+      const root=[.016+i*.003,.004-i*.001],tip=[[.071,.061],[.095,.032],[.080,-.014]][i],width=[.011,.012,.010][i];
+      const leaf=feather(g,i===1?b:a,c,root,tip,width,{side,x:.003+i*.003,sweep:.003,barbs:true,name:'curved-leaf-wing-panel'});
+      wingBinding(g,b,leaf,.00035,'leaf-wing-edge');
+    }
+    tube(g,c,[[.005,-.017,.004],[.006,-.008,.013],[.006,.008,.013],[.005,.017,.004]],.0010,'leaf-wing-vine-keeper',20);
+  }else if(k==='cloud-wings'){
+    for(const side of[-1,1]){
+      const panel=curvedWingPanel(g,a,[[.015,.006],[.022,.026],[.035,.031],[.038,.046],[.051,.052],[.063,.043],[.075,.047],[.087,.035],[.098,.021],[.089,.008],[.058,.004],[.030,-.005],[.019,-.003]],{side,x:.003,camber:.005,sweep:.003,thickness:.0014,name:'scalloped-cloud-wing-panel'});
+      wingBinding(g,b,panel,.00085,'cloud-soft-piped-edge');
+      for(let i=0;i<4;i++)feather(g,b,c,[.021+i*.003,.006],[.055+i*.010,.012+i*.005],.006,{side,x:.010+i*.0004,sweep:.002,name:'cloud-layered-flight-feather'});
+      wingLine(g,c,panel,[[side*.025,.021],[side*.045,.032],[side*.063,.028],[side*.085,.022]],.00032,'cloud-embroidered-swoop');
+    }
+  }
+  g.userData.wingForm=k;
+}
 
 function motif(g,a,b,p,r,design={}) {
   if(design.motif==='plain')return;
@@ -50,10 +189,12 @@ function canopyPanel(g,m,panel) {
 export function accessory(item) {
   const g=new THREE.Group(),[a,b,c]=item.palette.map(color=>mat(color));
   const metal=mat('#b7ac8f',{metalness:.65,roughness:.34}),dark=mat('#33474b',{roughness:.25}),paper=mat('#efe6d0');
-  const k=ALIASES[item.kind]||item.kind,region=item.region||(CHEST.has(k)?'chest':BACK.has(k)?'back':'side'),design=item.design||{};
+  const k=ALIASES[item.kind]||item.kind,region=item.region||(CHEST.has(k)?'chest':BACK.has(k)||WING_KINDS.has(k)?'back':'side'),design=item.design||{};
   g.userData={region,fitEdgeDefault:region==='chest'?.055:region==='side'?-.053:-.062};
   g.position.set(...(region==='chest'?[.065,-.014,.021]:region==='back'?[-.077,0,.018]:[.018,-.074,.007]));
   if(region==='back')g.rotation.z=PI;
+  if(ARTISAN_KINDS.has(k)){g.add(createArtisanAccessory(item));return g}
+  if(WING_KINDS.has(k)){tailoredWings(g,item,[a,b,c,metal]);return g}
 
   if(k==='camera'){
     softBox(g,a,[0,0,0],[.016,.029,.020],.0025,'leather-camera-body');softBox(g,c,[.008,0,-.001],[.002,.029,.011],.001,'camera-grip');
@@ -121,9 +262,6 @@ export function accessory(item) {
     const board=softBox(g,a,[0,0,0],[.062,.007,.020],.005,'wooden-skate-deck');board.rotation.y=-.28;
     for(const x of[-.020,.020]){tube(g,metal,[[x,-.009,-.006+x*.28],[x,.009,-.006+x*.28]],.0014,'skate-truck',8);for(const s of[-1,1])add(g,new THREE.CylinderGeometry(.004,.004,.003,20),b,[x,s*.009,-.006+x*.28],[0,0,0],[1,1,1],'skate-wheel')}
     motif(g,b,c,[.006,-.005,.006],.004,design);sideMount(g,c);
-  }else if(k==='wings'){
-    for(const s of[-1,1]){const upper=ellipsoid(g,b,[.003,s*.031,.010],[.003,.020,.026],'upper-fairy-wing');upper.rotation.x=s*-.3;const lower=ellipsoid(g,a,[.003,s*.030,-.011],[.003,.016,.017],'lower-fairy-wing');lower.rotation.x=s*.35;for(let i=0;i<4;i++)tube(g,c,[[.006,s*.009,.003],[.007,s*(.026+i*.004),.012+i*.004],[.006,s*(.029+i*.005),.029-i*.003]],.0004,'wing-vein',18)}
-    softBox(g,c,[-.002,0,0],[.006,.015,.024],.002,'wing-body-mount');
   }else if(k==='star'){
     star(g,b,[.002,0,0],.012);star(g,c,[.0035,0,0],.006);tube(g,c,[[0,0,.012],[-.004,.006,.024],[-.014,.024,.027]],.0008,'star-body-tether',16);
   }else if(k==='basket'||k==='flower-bouquet'){

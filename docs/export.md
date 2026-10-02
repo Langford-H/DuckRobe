@@ -24,6 +24,8 @@
 
 长度单位为米，角度为弧度。网页里的蹦跳和转台朝向不会冻结进导出模型。导出服饰在机器人参考坐标中随原有关节运动。
 
+网页的张嘴通过原生下颌网格的展示变换实现。上游 MJCF 中的下颌仍是固定部件；ZIP 保留参考闭合口形及原来的关节树。更活泼的空闲动作也沿用同一个稳定导出姿态。
+
 MJCF 另外包含 `duckrobe_preview` keyframe，可以恢复网页里的站立参考姿态和脚底地面高度。左右鞋袜分别挂在真实的 `ankle_left`、`ankle_right` body；暖腿套、绑带和护膝固定于 `leg`、`leg_2`，随对应关节运动。服饰沿用默认站姿中 Z 轴朝上的稳定建模挂点；导出会把它转换回原生 CAD body 坐标，不直接把两种坐标混用。
 
 鞋面根据原生脚部截面和脚背曲面构造双壁空腔，并保留真实鞋口与封闭鞋底。OBJ 同时包含内壁、外壁和鞋底；这些几何与网页预览共用，导出不会把空腔简化成填满脚部的实心外壳。袜套、绑带和护膝也保留对应部位的内部净空。
@@ -47,7 +49,9 @@ URDF 消费者可以用 `manifest.json` 的 `previewJointPositions` 设置 14 �
 
 服饰的几何、顶点法线、基本颜色与透明度会导出；网页材质中的程序织纹和纹理贴图不会烘焙到 OBJ。相同单件保持相同轮廓与基本颜色。`selection` 使用独立单件 ID，包含 `hat`、`eyewear`、`body`、`accessory`、`legwear` 五个键。`accessory` 的值为 `{ chest, side, back }`，每个值是对应区域单件 ID 或 `null`；其余槽位仍为单件 ID 或 `null`。旧的单个配饰字符串输入会按该单件的实际区域自动迁移。非法单件或放错区域的输入会被统一规范化并卸除。
 
-`manifest.json` 的 `formatVersion` 为 `3`，`accessoryRegions` 记录区域顺序，`selectedItemIds` 列出完整选择；每个配饰 mesh 的 `clothing` 条目记录 `region`、`itemId` 和 `bodyName`。三件配饰全部导出，不把对象当作单件 ID。多 body 的腿装分别记录同一 `itemId` 与对应 `bodyName`。胸前配饰通过射线命中真实衣服表面，背沿贴在该表面外 2 mm；身侧和背部配饰按衣服包围范围向外调整。网页和导出通过同一构造流程使用相同平移，最终变换写入 body-local OBJ。
+`manifest.json` 的 `formatVersion` 为 `3`，`accessoryRegions` 记录区域顺序，`selectedItemIds` 列出完整选择；每个配饰 mesh 的 `clothing` 条目记录 `region`、`itemId` 和 `bodyName`。三件配饰全部导出，不把对象当作单件 ID。多 body 的腿装分别记录同一 `itemId` 与对应 `bodyName`。
+
+胸前配饰的高度避开颈部机构，通过射线命中真实衣服表面，背沿贴在该表面外 2 mm；侧边道具抬到髋部电机上方，短挂座保留躯干连接高度并射线贴合局部衣物。身侧和背部配饰按衣服包围范围向外调整。成对翅膀作为一件背部配饰，翼片使用封闭的薄曲面，保留翅脉、羽轴或金属分段等细节。翼片位于衣物后方，两处短后挂座射线贴合局部衣服表面；无衣服时使用原生背部净空，整件固定于躯干挂点。网页和导出通过同一构造流程使用相同平移及挂座几何，最终变换写入 body-local OBJ。
 
 调用 `buildExportBundle` 或 `exportLook` 可以传入 `colors: { shell, accent }`（也支持 `bodyColors`）。显式色值优先于 `robot.metadata.bodyColors`，并经过网页同一套颜色规范化处理。动画只改变当前展示姿态；导出仍使用稳定参考坐标和预览 keyframe。
 
@@ -60,11 +64,14 @@ node scripts/validate-exports.mjs --all --out=/tmp/duckrobe-export-v3-validation
 python scripts/validate-exports.py /tmp/duckrobe-export-v3-validation
 node scripts/validate-subpath-assets.mjs
 node scripts/validate-footwear-fit.mjs
+node scripts/validate-accessory-fit.mjs
 ```
 
-第一步在 Node 中实际构造 100 套服饰、五槽及三配饰混搭、多 body 腿装、按区域卸除、旧配饰迁移、裸机和自定义本体配色，生成 ZIP 并检查两个格式的全部相对 mesh 引用。也检查网页动作没有写进静态导出文件。第二步需要 Python 的 `mujoco` 与 `numpy`，实际编译每个 MJCF，对照官方源模型检查关节、actuator、质量、惯量与碰撞参数不变，同时解析 URDF 并逐 body 对照两格式的预览姿态和服饰挂点。第三步使用严格 HTTP 服务器，实际验证根路径及 `/DuckRobe/` Pages 子路径下的 GLB、原始 XML、38 个 STL 和许可证加载，以及多配饰 ZIP 完整性；部署前缀不会写入模型的相对 mesh 引用。
+第一步在 Node 中实际构造 100 套服饰、五槽及三配饰混搭、多 body 腿装、按区域卸除、旧配饰迁移、裸机和自定义本体配色，生成 ZIP 并检查两个格式的全部相对 mesh 引用。也检查网页动作没有写进静态导出文件。独立配饰案例补充覆盖没有被当前预设引用的单件；各翅膀类型另有厚外套和三配饰区域同时穿戴的混搭案例。第二步需要 Python 的 `mujoco` 与 `numpy`，实际编译每个 MJCF，对照官方源模型检查关节、actuator、质量、惯量与碰撞参数不变，同时解析 URDF 并逐 body 对照两格式的预览姿态和服饰挂点。第三步使用严格 HTTP 服务器，实际验证根路径及 `/DuckRobe/` Pages 子路径下的 GLB、原始 XML、38 个 STL 和许可证加载，以及多配饰 ZIP 完整性；部署前缀不会写入模型的相对 mesh 引用。
 
 第四步独立检查腿装与真实原生脚、脚踝及相关腿部网格的表面交叉、内部嵌入和间距，包括动画姿态。它与「脚底最低点为零」的导出验证是不同的检查：贴地不代表鞋子没有穿模。
+
+第五步独立检查配饰与原生机器人三角面之间的间距和交叉，并通过闭合体内外判定检查双向包含。检查范围包括独立单品、预设搭配及明确列出的翅膀混搭场景，动作取自 16 个手动动作和 120 秒自动待机的有限姿态样本，包含实际展示下颌。翅膀可见性只在一个前侧三分之四视角取样。这些检查不能证明连续动作全程、全部观察角度或所有单品的任意组合。
 
 只检查代表性系列与混搭时可省略 `--all`。生成文件写到指定临时目录，不修改仓库资产。
 

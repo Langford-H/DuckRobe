@@ -25,7 +25,7 @@ const outfitById = new Map(OUTFITS.map(item => [item.id, item]));
 const itemById = new Map(ITEMS.map(item => [item.id, item]));
 const themeById = new Map(THEMES.map(item => [item.id, item]));
 const STORAGE_KEY = 'duckrobe.wardrobe.v2';
-const THUMBNAIL_VERSION = 'microduck-footwear-v4';
+const THUMBNAIL_VERSION = 'microduck-accessories-v5';
 let stored = {};
 try { stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {}; localStorage.removeItem('duckrobe.wardrobe.v1'); } catch { /* Browsing works without storage. */ }
 const validSelection = normalizeSelection;
@@ -86,7 +86,7 @@ function renderAccessoryFilters() {
   filters.querySelectorAll('button').forEach(button => button.addEventListener('click', () => { state.accessoryRegion = button.dataset.accessoryRegion; renderAccessoryFilters(); renderCatalog({ resetScroll: true }); }));
 }
 function thumbnailKey(item, isPart) { return isPart ? `item:${item.id}` : `look:${item.id}:${colorKey(lookColors(item))}`; }
-function cardImage(key, name) { const url = preview?.thumbnails.get(key); return url ? `<img src="${url}" alt="${escape(tr('previewAlt', { name }))}" loading="lazy" />` : `<span class="thumbnail-loading" aria-label="${escape(tr('generating'))}">${icon('shirt')}</span>`; }
+function cardImage(key, name) { const url = preview?.thumbnails.get(key); return url ? `<img src="${url}" alt="${escape(tr('previewAlt', { name }))}" loading="lazy" draggable="false" />` : `<span class="thumbnail-loading" aria-label="${escape(tr('generating'))}">${icon('shirt')}</span>`; }
 function observeCatalog(jobs, onReady) {
   catalogObserver?.disconnect(); cancelAnimationFrame(thumbnailFrame);
   const epoch = ++catalogEpoch, visible = new Map(), jobByKey = new Map(jobs.map(job => [job.key, job]));
@@ -117,18 +117,19 @@ function renderCatalog({ resetScroll = false } = {}) {
   const saved = state.view === 'saved', grid = $('outfit-grid'), query = state.query.trim().toLowerCase(), isPart = state.slot !== 'all';
   const scroll = $('catalog-scroll'), scrollTop = resetScroll ? 0 : scroll?.scrollTop || 0;
   $('wardrobe-nav').classList.toggle('active', !saved); $('saved-nav').classList.toggle('active', saved);
-  $('closet-title').innerHTML = `${tr(saved ? 'savedTitle' : 'closetTitle')}<span class="title-dot">.</span>`;
+  $('closet-title').textContent = tr(saved ? 'savedTitle' : 'closetTitle');
   $('closet-note').textContent = tr(saved ? 'savedNote' : 'closetNote');
   $('filter-favorites').hidden = saved; $('theme-filters').hidden = saved; $('slot-controls').parentElement.hidden = saved;
   if ($('accessory-filters')) $('accessory-filters').hidden = saved || state.slot !== 'accessory';
-  $('slot-caption').innerHTML = `${tr(isPart ? state.slot === 'accessory' ? 'multiPartHint' : 'partHint' : 'tryHint')} ${icon('arrow-down')}`;
+  $('slot-caption').textContent = tr(isPart ? state.slot === 'accessory' ? 'multiPartHint' : 'partHint' : 'tryHint');
   $('catalog-caption').textContent = tr(state.favoritesOnly && !saved ? 'favoritesNote' : 'catalogNote');
+  $('catalog-caption').hidden = saved || !state.favoritesOnly;
   if (saved) {
     const looks = state.saved.filter(look => !query || `${getLookName(look.selection)} ${selectedItemIds(look.selection).map(id => `${itemById.get(id)?.en || ''} ${itemById.get(id)?.name || ''}`).join(' ')}`.toLowerCase().includes(query));
     $('result-count').textContent = `${looks.length} ${tr('savedLabel')}`;
     grid.innerHTML = looks.length ? looks.map(look => {
       const name = getLookName(look.selection), date = new Intl.DateTimeFormat(state.language === 'zh' ? 'zh-CN' : 'en-GB', { month: 'short', day: 'numeric', timeZone: 'Asia/Shanghai' }).format(Number.isNaN(Date.parse(look.date)) ? new Date() : new Date(look.date));
-      return `<article class="outfit-card saved-card" data-saved="${look.id}"><button class="card-open" aria-label="${escape(tr('tryOn', { name }))}"><div class="card-visual" data-thumbnail="saved:${escape(look.id)}" style="--card-bg:#eceee3">${look.thumbnail ? `<img src="${look.thumbnail}" alt="${escape(tr('previewAlt', { name }))}" />` : cardImage(`saved:${look.id}`, name)}<span class="card-number">MY LOOK</span></div><div class="card-info"><div><h3 class="card-name" title="${escape(name)}">${escape(name)}</h3><p class="card-subtitle">${escape(date)}</p></div><div class="card-swatches"><i style="background:${look.colors.shell}"></i><i style="background:${look.colors.accent}"></i></div></div></button><button class="card-delete card-heart" aria-label="${escape(tr('deleteSaved', { name }))}">${icon('trash')}</button></article>`;
+      return `<article class="outfit-card saved-card" data-saved="${look.id}"><button class="card-open" aria-label="${escape(tr('tryOn', { name }))}"><div class="card-visual" data-thumbnail="saved:${escape(look.id)}" style="--card-bg:#eceee3">${look.thumbnail ? `<img src="${look.thumbnail}" alt="${escape(tr('previewAlt', { name }))}" draggable="false" />` : cardImage(`saved:${look.id}`, name)}</div><div class="card-info"><div><h3 class="card-name" title="${escape(name)}">${escape(name)}</h3><p class="card-subtitle">${escape(date)}</p></div><div class="card-swatches"><i style="background:${look.colors.shell}"></i><i style="background:${look.colors.accent}"></i></div></div></button><button class="card-delete card-heart" aria-label="${escape(tr('deleteSaved', { name }))}">${icon('trash')}</button></article>`;
     }).join('') : emptyState('saved');
     grid.querySelectorAll('[data-saved]').forEach(card => {
       const look = state.saved.find(look => look.id === card.dataset.saved);
@@ -139,24 +140,24 @@ function renderCatalog({ resetScroll = false } = {}) {
       const look = state.saved.find(look => `saved:${look.id}` === key);
       if (!look) return;
       look.thumbnail = url; look.thumbnailVersion = THUMBNAIL_VERSION;
-      grid.querySelectorAll('[data-thumbnail]').forEach(node => { if (node.dataset.thumbnail === key && node.querySelector('.thumbnail-loading')) { const image = document.createElement('img'); image.src = url; image.alt = tr('previewAlt', { name: getLookName(look.selection) }); node.querySelector('.thumbnail-loading').replaceWith(image); } });
+      grid.querySelectorAll('[data-thumbnail]').forEach(node => { if (node.dataset.thumbnail === key && node.querySelector('.thumbnail-loading')) { const image = document.createElement('img'); image.draggable = false; image.src = url; image.alt = tr('previewAlt', { name: getLookName(look.selection) }); node.querySelector('.thumbnail-loading').replaceWith(image); } });
       persist();
     });
   } else {
     const pool = isPart ? ITEMS.filter(item => item.slot === state.slot) : OUTFITS;
     const items = pool.filter(item => (state.theme === 'all' || item.theme === state.theme) && (state.slot !== 'accessory' || state.accessoryRegion === 'all' || item.region === state.accessoryRegion) && (!state.favoritesOnly || state.favorites.has(`${isPart ? 'item' : 'look'}:${item.id}`)) && (!query || `${item.name} ${item.en} ${item.description || ''} ${item.descriptionEn || ''} ${themeById.get(item.theme)?.name} ${themeById.get(item.theme)?.en}`.toLowerCase().includes(query)));
     $('result-count').textContent = `${items.length} ${tr(isPart ? 'piecesLabel' : 'looksLabel')}`;
-    grid.innerHTML = items.length ? items.map((item, index) => {
+    grid.innerHTML = items.length ? items.map(item => {
       const selected = isPart ? selectedItemIds(state.selection, item.slot).includes(item.id) : currentLook()?.id === item.id;
       const key = `${isPart ? 'item' : 'look'}:${item.id}`, name = nameOf(item), imageKey = thumbnailKey(item, isPart);
       const slots = isPart ? [item.slot] : SLOT_IDS.filter(slot => selectedItemIds(item.selection, slot).length);
       const swatches = isPart ? (item.palette || []).slice(0, 3) : Object.values(lookColors(item));
       const position = isPart && item.region ? `<span class="card-position">${tr(regionKeys[item.region])}</span>` : '';
-      return `<article class="outfit-card${selected ? ' active equipped' : ''}${isPart ? ' item-card' : ''}" ${isPart ? 'data-item' : 'data-outfit'}="${item.id}"><button class="card-open" aria-label="${escape(tr('tryOn', { name }))}" aria-pressed="${selected}"><div class="card-visual" data-thumbnail="${escape(imageKey)}" style="--card-bg:${themeById.get(item.theme)?.color || '#efeddf'}">${cardImage(imageKey, name)}<span class="card-number">${isPart ? icon(slotIcons[item.slot]) : String(OUTFITS.indexOf(item) + 1).padStart(2, '0')}</span>${selected ? `<span class="card-selected card-equipped">${icon('check')} ${tr('wearing')}</span>` : ''}</div><div class="card-info"><div><h3 class="card-name" title="${escape(name)}">${escape(name)}</h3><p class="card-subtitle">${escape(nameOf(themeById.get(item.theme)))}</p></div><div class="card-swatches" aria-label="${escape(tr(isPart ? 'piecePalette' : 'lookBodyColors'))}" title="${escape(tr(isPart ? 'piecePalette' : 'lookBodyColors'))}">${swatches.map(color => `<i style="background:${color}"></i>`).join('')}</div></div><div class="parts-tag">${slots.map(slot => `<span class="item-part" title="${tr(slotKeys[slot])}">${icon(slotIcons[slot])}${!isPart && slot === 'accessory' ? `<small>${selectedItemIds(item.selection, slot).length}</small>` : ''}</span>`).join('')}${position}</div></button><button class="card-heart${state.favorites.has(key) ? ' is-favorite' : ''}" aria-label="${escape(tr(state.favorites.has(key) ? 'unfavorite' : 'favorite', { name }))}" aria-pressed="${state.favorites.has(key)}">${icon('heart')}</button></article>`;
+      return `<article class="outfit-card${selected ? ' active equipped' : ''}${isPart ? ' item-card' : ''}" ${isPart ? 'data-item' : 'data-outfit'}="${item.id}"><button class="card-open" aria-label="${escape(tr('tryOn', { name }))}" aria-pressed="${selected}"><div class="card-visual" data-thumbnail="${escape(imageKey)}" style="--card-bg:${themeById.get(item.theme)?.color || '#efeddf'}">${cardImage(imageKey, name)}${selected ? `<span class="card-selected card-equipped">${icon('check')} ${tr('wearing')}</span>` : ''}</div><div class="card-info"><div><h3 class="card-name" title="${escape(name)}">${escape(name)}</h3><p class="card-subtitle">${escape(nameOf(themeById.get(item.theme)))}</p></div><div class="card-swatches" aria-label="${escape(tr(isPart ? 'piecePalette' : 'lookBodyColors'))}" title="${escape(tr(isPart ? 'piecePalette' : 'lookBodyColors'))}">${swatches.map(color => `<i style="background:${color}"></i>`).join('')}</div></div><div class="parts-tag">${slots.map(slot => `<span class="item-part" title="${tr(slotKeys[slot])}">${icon(slotIcons[slot])}${!isPart && slot === 'accessory' ? `<small>${selectedItemIds(item.selection, slot).length}</small>` : ''}</span>`).join('')}${position}</div></button><button class="card-heart${state.favorites.has(key) ? ' is-favorite' : ''}" aria-label="${escape(tr(state.favorites.has(key) ? 'unfavorite' : 'favorite', { name }))}" aria-pressed="${state.favorites.has(key)}">${icon('heart')}</button></article>`;
     }).join('') : emptyState(state.favoritesOnly ? 'favorites' : 'search');
     grid.querySelectorAll('[data-outfit], [data-item]').forEach(card => { const part = Boolean(card.dataset.item), id = card.dataset.item || card.dataset.outfit; card.querySelector('.card-open').addEventListener('click', () => part ? selectItem(id) : selectLook(id)); card.querySelector('.card-heart').addEventListener('click', () => toggleFavorite(`${part ? 'item' : 'look'}:${id}`)); });
     observeCatalog(items.map(item => ({ key: thumbnailKey(item, isPart), selection: isPart ? validSelection({ [item.slot]: item.id }) : item.selection, options: { item: isPart, colors: isPart ? DEFAULT_ROBOT_COLORS : lookColors(item) } })), (key, url) => {
-      grid.querySelectorAll('[data-thumbnail]').forEach(node => { if (node.dataset.thumbnail === key && node.querySelector('.thumbnail-loading')) { const image = document.createElement('img'); image.src = url; image.alt = tr('previewAlt', { name: node.closest('article').querySelector('.card-name').textContent }); image.loading = 'lazy'; node.querySelector('.thumbnail-loading').replaceWith(image); } });
+      grid.querySelectorAll('[data-thumbnail]').forEach(node => { if (node.dataset.thumbnail === key && node.querySelector('.thumbnail-loading')) { const image = document.createElement('img'); image.draggable = false; image.src = url; image.alt = tr('previewAlt', { name: node.closest('article').querySelector('.card-name').textContent }); image.loading = 'lazy'; node.querySelector('.thumbnail-loading').replaceWith(image); } });
     });
   }
   if (scroll) scroll.scrollTop = scrollTop;
@@ -190,7 +191,7 @@ hydrateIcons();
 $('dialog-close').addEventListener('click', () => $('info-dialog').close());
 $('info-dialog').addEventListener('click', event => { if (event.target === $('info-dialog')) { const rect = event.target.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) event.target.close(); } });
 $('about-button').addEventListener('click', () => showInfo(`<div class="dialog-kicker">HELLO, LITTLE DUCK.</div><h2>${tr('aboutTitle')}</h2><p>${tr('aboutText')}</p><p>${tr('aboutStorage')}</p><p class="dialog-note">${tr('aboutNote')}</p>`));
-$('source-button').addEventListener('click', () => showInfo(`<div class="dialog-kicker">BUILT WITH OPEN SOURCE</div><h2>${tr('sourceTitle')}</h2><p>${tr('sourceText')}</p><p><a href="https://github.com/pollen-robotics/microduck_rl" target="_blank" rel="noopener noreferrer">Microduck RL ↗</a></p><p><a href="https://huggingface.co/spaces/pollen-robotics/microduck-simulator" target="_blank" rel="noopener noreferrer">Microduck simulator ↗</a></p><p class="dialog-note">${tr('sourceNote')}</p>`));
+$('source-button').addEventListener('click', () => showInfo(`<div class="dialog-kicker">BUILT WITH OPEN SOURCE</div><h2>${tr('sourceTitle')}</h2><p>${tr('sourceText')}</p><p><a href="https://github.com/ruziniuuuuu/DuckRobe" target="_blank" rel="noopener noreferrer" aria-label="${escape(tr('githubRepository'))}">${tr('projectRepository')} ↗</a></p><p><a href="https://github.com/pollen-robotics/microduck_rl" target="_blank" rel="noopener noreferrer">Microduck RL ↗</a></p><p><a href="https://huggingface.co/spaces/pollen-robotics/microduck-simulator" target="_blank" rel="noopener noreferrer">Microduck simulator ↗</a></p><p class="dialog-note">${tr('sourceNote')}</p>`));
 $('wardrobe-nav').addEventListener('click', () => setView('wardrobe')); $('saved-nav').addEventListener('click', () => setView('saved'));
 $('outfit-search').addEventListener('input', event => { state.query = event.target.value; renderCatalog({ resetScroll: true }); });
 document.addEventListener('keydown', event => { if (event.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName) && !$('info-dialog').open) { event.preventDefault(); $('outfit-search').focus(); } });
@@ -224,6 +225,7 @@ $('export-look').addEventListener('click', async () => {
   finally { exporting = false; button.disabled = false; button.querySelector('[data-i18n="exportLook"]').textContent = tr('exportLook'); }
 });
 const catalogScroll = $('catalog-scroll');
+catalogScroll?.addEventListener('dragstart', event => event.preventDefault());
 let dragGesture, ignoreClickUntil = 0;
 function finishCatalogDrag() {
   if (!dragGesture) return;

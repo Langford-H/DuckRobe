@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { BoxGeometry, Group, Mesh, MeshStandardMaterial, PerspectiveCamera, Vector3 } from 'three';
+import { BoxGeometry, Group, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Quaternion, Vector3 } from 'three';
 import { loadRobot, DEFAULT_ROBOT_COLORS, normalizeRobotColors } from '../src/robot.js';
-import { ACTIONS, createBehaviorController } from '../src/behavior.js';
+import { ACTIONS, createBehaviorController, MAX_VISUAL_JAW_OPEN } from '../src/behavior.js';
 
 // Load the exact browser GLB and body tree without WebGL or an HTTP server.
 const publicRoot = path.resolve('public');
@@ -31,6 +31,27 @@ assert.deepEqual(rig.metadata.bodyColors, { shell: '#76a999', accent: '#ffc36b' 
 assert.equal(rig.group.getObjectByName('jaw_soft:top_head_shell.stl').material.color.getHexString(), '76a999');
 assert.equal(rig.group.getObjectByName('jaw_soft:jaw.stl').material.color.getHexString(), 'ffc36b');
 assert.equal(rig.group.getObjectByName('jaw_soft:lens.stl').material.color.getHexString(), '111b20');
+const headAnchor = rig.anchors.get('jaw_soft');
+const jawPivot = rig.group.getObjectByName('microduck_visual_jaw');
+const jawAxis = new Vector3(0, 1, 0).applyQuaternion(rig.bodies.get('jaw_soft').getWorldQuaternion(new Quaternion()).invert()).normalize();
+const jawMesh = rig.group.getObjectByName('jaw_soft:jaw.stl');
+const softJawMesh = rig.group.getObjectByName('jaw_soft:jaw_soft.stl');
+const upperMouthMesh = rig.group.getObjectByName('jaw_soft:soft_mouth_top.stl');
+assert.equal(jawMesh.parent, jawPivot);
+assert.equal(softJawMesh.parent, jawPivot);
+assert.notEqual(upperMouthMesh.parent, jawPivot, 'Upper beak must stay attached to the head');
+const relativeUpper = () => new Matrix4().multiplyMatrices(headAnchor.matrixWorld.clone().invert(), upperMouthMesh.matrixWorld).toArray();
+const closedUpper = relativeUpper();
+const jawPositions = jawMesh.geometry.getAttribute('position');
+let jawTipLocal, maximumTipX = -Infinity;
+for (let i = 0; i < jawPositions.count; i++) {
+  const local = new Vector3().fromBufferAttribute(jawPositions, i);
+  const tip = headAnchor.worldToLocal(jawMesh.localToWorld(local.clone()));
+  if (tip.x > maximumTipX) { maximumTipX = tip.x; jawTipLocal = local; }
+}
+const relativeJawTip = () => headAnchor.worldToLocal(jawMesh.localToWorld(jawTipLocal.clone()));
+const closedJawTip = relativeJawTip();
+const jawOpening = () => jawPivot.quaternion.angleTo(new Quaternion());
 
 function exactSoleBottom() {
   let minimum = Infinity;
@@ -56,6 +77,9 @@ function frame(options = { enabled: true }, step = 1 / 60) {
   assert(Math.hypot(rig.group.position.x, rig.group.position.y) <= .035001, 'Turn walked off the central stage');
   assert(state.footBounds.left >= -1e-8 && state.footBounds.right >= -1e-8, 'Cached foot support reports penetration');
   assert(rig.group.quaternion.angleTo(previousQuaternion) < .25, 'Action transition snapped the robot orientation');
+  assert(jawOpening() <= MAX_VISUAL_JAW_OPEN + 1e-8, 'Display jaw exceeded its tested opening');
+  const upper = relativeUpper();
+  assert(upper.every((value, index) => Math.abs(value - closedUpper[index]) < 1e-9), 'Quacking moved the fixed upper beak');
   if (frames % 37 === 0) {
     const bottom = exactSoleBottom(); smallestGap = Math.min(smallestGap, bottom); biggestGap = Math.max(biggestGap, bottom);
     assert(bottom >= -1e-8, `Foot or footwear penetrates the floor by ${bottom}`);
@@ -75,7 +99,7 @@ for (const action of ACTIONS) {
   const kind = action.id;
   assert(rig.trigger(kind));
   let maximumLift = 0;
-  let minimumYaw = Infinity, maximumYaw = -Infinity, maximumFootGap = 0;
+  let minimumYaw = Infinity, maximumYaw = -Infinity, maximumFootGap = 0, maximumJawOpening = 0, maximumLipDrop = 0;
   const jointMin = {}, jointMax = {}, lifts = [];
   const roll = [], pitch = [];
   const observed = new Set();
@@ -83,6 +107,8 @@ for (const action of ACTIONS) {
     const state = frame({ enabled: false }); observed.add(state.kind); maximumLift = Math.max(maximumLift, state.lift);
     minimumYaw = Math.min(minimumYaw, rig.group.rotation.z); maximumYaw = Math.max(maximumYaw, rig.group.rotation.z);
     maximumFootGap = Math.max(maximumFootGap, Math.abs(state.footBounds.left - state.footBounds.right));
+    maximumJawOpening = Math.max(maximumJawOpening, jawOpening());
+    maximumLipDrop = Math.max(maximumLipDrop, closedJawTip.z - relativeJawTip().z);
     lifts.push(state.lift); roll.push(rig.group.rotation.x); pitch.push(rig.group.rotation.y);
     for (const [name, joint] of rig.joints) {
       const offset = joint.angle - rig.metadata.defaultPose[name];
@@ -92,12 +118,13 @@ for (const action of ACTIONS) {
   }
   assert(observed.has(kind), `${kind} never played`);
   assert.equal(rig.behavior.getState().active, false, `${kind} did not complete`);
+  assert(jawOpening() < 1e-5, `${kind} never closed its mouth after finishing`);
   assert(Object.values(jointMax).some((value, index) => value - Object.values(jointMin)[index] > .007), `${kind} has no visible native joint motion`);
   const trace = [maximumLift, maximumFootGap, maximumYaw - minimumYaw, Math.max(...roll) - Math.min(...roll), Math.max(...pitch) - Math.min(...pitch), ...Object.keys(jointMin).flatMap(name => [jointMin[name], jointMax[name]])];
   const signature = JSON.stringify(trace.map(value => Math.round(value * 10000)));
   assert(!signatures.has(signature), `${kind} repeats another action's actual motion`); signatures.add(signature);
   const liftPeaks = lifts.filter((value, index) => value > .012 && value > lifts[index - 1] && value >= lifts[index + 1]).length;
-  actions[kind] = { duration: action.duration, maximumLift, yawTravel: maximumYaw - minimumYaw, maximumFootGap, liftPeaks };
+  actions[kind] = { duration: action.duration, maximumLift, yawTravel: maximumYaw - minimumYaw, maximumFootGap, liftPeaks, maximumJawOpening, maximumLipDrop };
 }
 assert(actions.hop.maximumLift > .015 && actions.hop.maximumLift < .022);
 assert.equal(actions.hop.liftPeaks, 1, 'Hop must visibly leave the ground once');
@@ -105,6 +132,13 @@ assert.equal(actions['double-hop'].liftPeaks, 2, 'Double hop must visibly leave 
 assert(actions.turn.yawTravel > 6.2, 'Turn never completed a full revolution');
 assert(actions.turn.maximumFootGap > .008 && actions.dance.maximumFootGap > .008, 'Stepping never lifted either foot');
 assert(actions['tiny-steps'].maximumFootGap > .008 && actions['toe-tap'].maximumFootGap > .003, 'New stepping gestures never lifted a foot');
+for (const kind of ['greet', 'hop', 'double-hop', 'dance', 'peek']) {
+  assert(actions[kind].maximumJawOpening > .18, `${kind} had no readable mouth expression`);
+  assert(actions[kind].maximumLipDrop > .010, `${kind} did not move the native lower lip visibly`);
+}
+for (const kind of ['rest', 'observe', 'tilt', 'sway', 'tiny-steps', 'toe-tap', 'bow', 'look-around']) {
+  assert(actions[kind].maximumJawOpening < 1e-5, `${kind} kept quacking during a quiet or focused gesture`);
+}
 
 // New shoes participate in support queries even when attached after loading.
 const syntheticFootwear = [];
@@ -131,6 +165,7 @@ const initialYaw = rig.group.rotation.z;
 for (let i = 0; i < 90; i++) assert.equal(frame({ enabled: true, pointer, interacting: true }).kind, 'inspect');
 assert.equal(rig.group.rotation.z, initialYaw);
 assert(Math.abs(rig.joints.get('head_yaw').angle) < .002);
+assert(jawOpening() < 1e-5, 'Inspecting left the mouth open');
 // A manual action must override the inspection grace period. This is what
 // happens when "Hop" is pressed just after picking new clothes or orbiting.
 rig.setInteraction(false);
@@ -187,26 +222,56 @@ for (const [name, joint] of rig.joints) assert(Math.abs(joint.angle - rig.metada
 // browser session, including all newly attached shoes throughout the loop.
 const idleKinds = new Set();
 const idleEvents = [];
-for (let seed of [3127, 822, 98761]) {
+const idleRuns = [];
+let idleMaximumLift = 0, idleMaximumHeadRoll = 0, idleMaximumJawOpening = 0, idleMaximumLipDrop = 0;
+for (const initialSeed of [3127, 822, 98761]) {
+  let seed = initialSeed;
   const idle = createBehaviorController({ group: rig.group, bodies: rig.bodies, setJoint: rig.setJoint,
     defaultPose: rig.metadata.defaultPose, groundOffset: rig.metadata.groundOffset,
+    jawPivot, jawAxis,
     random: () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; } });
   animate = idle.animate;
-  let previous = { active: false }, previousEnergy = null;
+  let previous = { active: false }, livelyStreak = 0, activeFrames = 0, livelyFrames = 0;
+  let inactiveTime = 0, longestInactiveTime = 0, firstPlayfulAt = Infinity;
   for (let i = 0; i < 3600; i++) {
     const state = frame({ enabled: true }, .05); idleKinds.add(state.kind);
+    const energy = ACTIONS.find(action => action.id === state.kind)?.energy;
+    if (state.active) {
+      activeFrames++;
+      inactiveTime = 0;
+      if (energy === 'lively') { livelyFrames++; firstPlayfulAt = Math.min(firstPlayfulAt, i * .05); }
+    } else {
+      inactiveTime += .05; longestInactiveTime = Math.max(longestInactiveTime, inactiveTime);
+    }
+    idleMaximumLift = Math.max(idleMaximumLift, state.lift);
+    idleMaximumHeadRoll = Math.max(idleMaximumHeadRoll, Math.abs(rig.joints.get('head_roll').angle));
+    idleMaximumJawOpening = Math.max(idleMaximumJawOpening, jawOpening());
+    idleMaximumLipDrop = Math.max(idleMaximumLipDrop, closedJawTip.z - relativeJawTip().z);
     if (state.active && !previous.active) {
-      const energy = ACTIONS.find(action => action.id === state.kind).energy;
-      assert(!(energy === 'lively' && previousEnergy === 'lively'), 'Idle scheduled two lively actions in a row');
-      previousEnergy = energy; idleEvents.push(energy);
+      livelyStreak = energy === 'lively' ? livelyStreak + 1 : 0;
+      assert(livelyStreak <= 2, 'Idle never gave its playful sequence a quiet beat');
+      idleEvents.push(energy);
     }
     previous = state;
   }
+  const run = { seed: initialSeed, activeShare: activeFrames / 3600, livelyShare: livelyFrames / 3600, firstPlayfulAt, longestInactiveTime };
+  assert(run.firstPlayfulAt < 1, 'Default duck took too long to start playing');
+  assert(run.activeShare > .68 && run.activeShare < .92, 'Default duck must stay expressive while leaving natural rests');
+  assert(run.livelyShare > .25, 'Default duck spent almost all of its time standing or watching');
+  assert(run.longestInactiveTime < 1.5, 'Default duck stayed still for several seconds between gestures');
+  idleRuns.push(run);
   for (let i = 0; i < 100; i++) frame({ enabled: false });
+  assert.equal(idle.getState().active, false, 'Pause left an autonomous action running');
+  assert(jawOpening() < 1e-5, 'Pause left the mouth open');
+  for (const [name, joint] of rig.joints) assert(Math.abs(joint.angle - rig.metadata.defaultPose[name]) < .002, `Pause left ${name} moving`);
 }
-assert(idleKinds.size >= 6, 'Idle only repeated a few gestures');
+assert(idleKinds.size >= 12, 'Idle only repeated a few gestures');
 const quietShare = idleEvents.filter(energy => energy === 'quiet').length / idleEvents.length;
-assert(quietShare > .65, 'Idle behavior became continuously frantic');
+assert(quietShare > .3 && quietShare < .75, 'Idle needs a varied balance of playful and quiet gestures');
+assert(idleMaximumLift > .029 && idleMaximumLift < .037, 'Autonomous hops were not visibly larger');
+assert(idleMaximumHeadRoll > .25, 'Autonomous head gestures were too subtle at dashboard size');
+assert(idleMaximumJawOpening > .25 && idleMaximumJawOpening <= MAX_VISUAL_JAW_OPEN, 'Idle mouth expressions were not readable or exceeded the tested cap');
+assert(idleMaximumLipDrop > .014, 'Idle never opened the native lower lip visibly');
 
 syntheticFootwear.forEach(group => { group.removeFromParent(); group.traverse(mesh => { if (mesh.isMesh) { mesh.geometry.dispose(); mesh.material.dispose(); } }); });
 const { ITEMS, OUTFITS, createOutfitParts } = await import('../src/outfits.js');
@@ -231,11 +296,17 @@ for (const outfit of fixtures) {
   });
   const expectedAdjustment = Number.isFinite(footwearBottom) ? Math.max(0, -footwearBottom) : 0;
   const controller = createBehaviorController({ group: rig.group, bodies: rig.bodies, setJoint: rig.setJoint,
-    defaultPose: rig.metadata.defaultPose, groundOffset: rig.metadata.groundOffset, random: () => .5 });
+    defaultPose: rig.metadata.defaultPose, groundOffset: rig.metadata.groundOffset, jawPivot, jawAxis, random: () => .5 });
   animate = controller.animate;
   frame({ enabled: false });
   const actualAdjustment = rig.group.position.z - rig.metadata.groundOffset;
   assert(Math.abs(actualAdjustment - expectedAdjustment) < 1e-10, `${outfit.id}: static footwear floor differs from reference export correction`);
+  // The default welcome uses the larger autonomous envelope with the exact
+  // shoes selected by every full look, rather than only synthetic soles.
+  let welcomeLift = 0;
+  for (let i = 0; i < 70; i++) welcomeLift = Math.max(welcomeLift, frame({ enabled: true }, .05).lift);
+  assert(welcomeLift > .029, `${outfit.id}: default welcome hop was too subtle`);
+  for (let i = 0; i < 40; i++) frame({ enabled: false }, .05);
   const footwearKind = itemById.get(outfit.selection.legwear)?.kind || 'bare';
   // Footwear geometry is determined by kind; palette changes only material.
   // Run every gesture against each actual sole shape, and hop every full look.
@@ -245,7 +316,7 @@ for (const outfit of fixtures) {
     assert(controller.trigger(action.id));
     for (let i = 0; i < Math.ceil(action.duration / .05) + 8; i++) frame({ enabled: false }, .05);
   }
-  catalog.push({ id: outfit.id, footwear: footwearKind, previewGroundAdjustment: actualAdjustment });
+  catalog.push({ id: outfit.id, footwear: footwearKind, previewGroundAdjustment: actualAdjustment, welcomeLift });
   for (const part of parts) {
     part.group.removeFromParent();
     const geometries = new Set(), materials = new Set();
@@ -255,4 +326,5 @@ for (const outfit of fixtures) {
 }
 assert.equal(immutable, exportReference());
 console.log(JSON.stringify({ frames, smallestGap, biggestGap, actions, idleKinds: [...idleKinds], idleQuietShare: quietShare,
+  idleRuns, idleMaximumLift, idleMaximumHeadRoll, idleMaximumJawOpening, idleMaximumLipDrop,
   catalogCount: OUTFITS.length, catalogFixtureCount: catalog.length, testedFootwear: [...testedFootwear], colors: rig.metadata.bodyColors, result: 'passed' }, null, 2));

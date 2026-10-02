@@ -269,7 +269,7 @@ try {
       await legacyPage.goto(url, { waitUntil: 'domcontentloaded' }); await ready(legacyPage); await workspace(legacyPage);
       assert.deepEqual(await selection(legacyPage), expected); assert.equal(await legacyPage.locator('#color-lock').getAttribute('aria-pressed'), 'true');
       await legacyPage.locator('#saved-nav').click(); await legacyPage.waitForFunction(() => window.duckrobe.state.saved[0].thumbnail?.length > 3000, null, { timeout: 180000 });
-      const saved = await legacyPage.evaluate(() => window.duckrobe.state.saved[0]); assert.deepEqual(saved.selection, expected); assert.equal(saved.date, '2026-10-01T20:00:00.000Z'); assert.notEqual(saved.thumbnail, oldThumbnail); assert.match(saved.thumbnailVersion, /footwear-v4$/);
+      const saved = await legacyPage.evaluate(() => window.duckrobe.state.saved[0]); assert.deepEqual(saved.selection, expected); assert.equal(saved.date, '2026-10-01T20:00:00.000Z'); assert.notEqual(saved.thumbnail, oldThumbnail); assert.equal(saved.thumbnailVersion, 'microduck-accessories-v5');
       assert.match(await legacyPage.locator('[data-saved] .card-subtitle').innerText(), /2 Oct|Oct 2/); assert(await legacyPage.evaluate(id => window.duckrobe.state.favorites.has(`item:${id}`), piece.id));
       await legacyPage.locator('#clear-look').click(); await legacyPage.locator('[data-saved] .card-open').click(); assert.deepEqual(await selection(legacyPage), expected); assert.deepEqual(await colors(legacyPage), { shell: '#bdace3', accent: '#f2dbac' });
       await snapshot('legacy-scalar-migration.png', legacyPage);
