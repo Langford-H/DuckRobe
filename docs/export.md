@@ -2,7 +2,7 @@
 
 网页的「导出搭配」始终下载一个 ZIP，同时包含 `microduck.urdf` 与 `microduck.xml`，以及它们引用的全部本体 STL、服饰 OBJ、材质、来源 manifest 和上游许可证。解压后保持目录结构，所有模型引用都是相对路径，无需依赖网站或联网加载。
 
-当前衣橱有 24 套精选搭配。帽子、眼镜、衣服、配饰、腿装/鞋袜是五个独立槽位，整套和跨套混搭使用同一导出流程；卸下的槽位不会留下几何。
+当前衣橱有 100 套搭配及独立单品库。帽子、眼镜、衣服、配饰、腿装/鞋袜是五个独立槽位；配饰进一步分为胸前、侧边和背部，三个区域各放一件，可以同时穿戴。整套和跨套混搭使用同一导出流程；单独卸除某一区域不会移除其他配饰，也不会留下该件几何。
 
 眼镜保持 Microduck 的独眼设计：每个单件仅有一个镜框和一片镜片，对齐原始相机。导出 manifest 的 `detailName` 记录这些部件，验证会检查镜框与镜片的数量。
 
@@ -19,7 +19,7 @@
 | `meshes/robot/*.stl` | 38 个上游原始机器人 mesh |
 | `meshes/outfits/*.obj` | 当前帽子、衣服、配饰的几何；嵌套缩放、旋转和平移已转换到对应 body 的局部坐标 |
 | `materials.mtl` | 服饰颜色与透明度，MJCF 和 URDF 内也写入相同颜色 |
-| `manifest.json` | 五槽单件选择、本体颜色、来源版本、关节参数、每个单件的实际 body 挂点和兼容性说明 |
+| `manifest.json` | v3 五槽单件选择、三配饰区域、本体颜色、来源版本、关节参数、每个单件的实际 body 挂点和兼容性说明 |
 | `LICENSE-Microduck.txt` | 原样保存的上游许可证 |
 
 长度单位为米，角度为弧度。网页里的蹦跳和转台朝向不会冻结进导出模型。导出服饰在机器人参考坐标中随原有关节运动。
@@ -41,7 +41,9 @@ URDF 消费者可以用 `manifest.json` 的 `previewJointPositions` 设置 14 �
 
 服饰是视觉部件，没有碰撞，也没有质量。MJCF 在原始 body 上添加 `contype="0"`、`conaffinity="0"`、`mass="0"` 和 `density="0"` 的 mesh geom；不会意外改变本体动力学。URDF 服饰 link 没有 inertial 或 collision 元素。导出结果用于三维预览和机器人仿真，未包含布料仿真或可直接制作的纸样。
 
-服饰的几何、顶点法线、基本颜色与透明度会导出；网页材质中的程序织纹和纹理贴图不会烘焙到 OBJ。相同单件保持相同轮廓与基本颜色。`selection` 使用独立单件 ID，包含 `hat`、`eyewear`、`body`、`accessory`、`legwear` 五个键，`null` 表示卸除。多 body 的腿装会在 `clothing` 中分别记录同一 `itemId` 与对应 `bodyName`。
+服饰的几何、顶点法线、基本颜色与透明度会导出；网页材质中的程序织纹和纹理贴图不会烘焙到 OBJ。相同单件保持相同轮廓与基本颜色。`selection` 使用独立单件 ID，包含 `hat`、`eyewear`、`body`、`accessory`、`legwear` 五个键。`accessory` 的值为 `{ chest, side, back }`，每个值是对应区域单件 ID 或 `null`；其余槽位仍为单件 ID 或 `null`。旧的单个配饰字符串输入会按该单件的实际区域自动迁移。非法单件或放错区域的输入会被统一规范化并卸除。
+
+`manifest.json` 的 `formatVersion` 为 `3`，`accessoryRegions` 记录区域顺序，`selectedItemIds` 列出完整选择；每个配饰 mesh 的 `clothing` 条目记录 `region`、`itemId` 和 `bodyName`。三件配饰全部导出，不把对象当作单件 ID。多 body 的腿装分别记录同一 `itemId` 与对应 `bodyName`。胸前配饰通过射线命中真实衣服表面，背沿贴在该表面外 2 mm；身侧和背部配饰按衣服包围范围向外调整。网页和导出通过同一构造流程使用相同平移，最终变换写入 body-local OBJ。
 
 调用 `buildExportBundle` 或 `exportLook` 可以传入 `colors: { shell, accent }`（也支持 `bodyColors`）。显式色值优先于 `robot.metadata.bodyColors`，并经过网页同一套颜色规范化处理。动画只改变当前展示姿态；导出仍使用稳定参考坐标和预览 keyframe。
 
@@ -50,11 +52,12 @@ MJCF 是保留上游 actuator、armature、传感器和接触参数的完整格�
 ## 验证
 
 ```bash
-node scripts/validate-exports.mjs --all --out=/tmp/duckrobe-export-v2-validation
-python scripts/validate-exports.py /tmp/duckrobe-export-v2-validation
+node scripts/validate-exports.mjs --all --out=/tmp/duckrobe-export-v3-validation
+python scripts/validate-exports.py /tmp/duckrobe-export-v3-validation
+node scripts/validate-subpath-assets.mjs
 ```
 
-第一步在 Node 中实际构造 24 套服饰、五槽混搭、多 body 腿装、卸除、裸机和自定义本体配色，生成 ZIP 并检查两个格式的全部相对 mesh 引用。也检查网页动作没有写进静态导出文件。第二步需要 Python 的 `mujoco` 与 `numpy`，实际编译每个 MJCF，对照官方源模型检查关节、actuator、质量、惯量与碰撞参数不变，同时解析 URDF 并逐 body 对照两格式的预览姿态和服饰挂点。
+第一步在 Node 中实际构造 100 套服饰、五槽及三配饰混搭、多 body 腿装、按区域卸除、旧配饰迁移、裸机和自定义本体配色，生成 ZIP 并检查两个格式的全部相对 mesh 引用。也检查网页动作没有写进静态导出文件。第二步需要 Python 的 `mujoco` 与 `numpy`，实际编译每个 MJCF，对照官方源模型检查关节、actuator、质量、惯量与碰撞参数不变，同时解析 URDF 并逐 body 对照两格式的预览姿态和服饰挂点。第三步使用严格 HTTP 服务器，实际验证根路径及 `/DuckRobe/` Pages 子路径下的 GLB、原始 XML、38 个 STL 和许可证加载，以及多配饰 ZIP 完整性；部署前缀不会写入模型的相对 mesh 引用。
 
 只检查代表性系列与混搭时可省略 `--all`。生成文件写到指定临时目录，不修改仓库资产。
 
@@ -68,7 +71,7 @@ python scripts/validate-exports.py /tmp/duckrobe-export-fit-check
 若完整动力学已验证通过，后续只调整视觉几何，可保留源 XML、惯量与 actuator 的保护检查，同时单独复验编译、几何、挂点、姿态、配色与地面高度：
 
 ```bash
-python scripts/validate-exports.py /tmp/duckrobe-export-fit-check --geometry-only --prior-physics-report /tmp/duckrobe-export-v2-validation/mujoco-validation.json
+python scripts/validate-exports.py /tmp/duckrobe-export-fit-check --geometry-only --prior-physics-report /tmp/duckrobe-export-v3-validation/mujoco-validation.json
 ```
 
 这种报告会明确标记 `geometry-only` 和 `dynamicsCompared: false`，并引用之前的完整动力学结果。

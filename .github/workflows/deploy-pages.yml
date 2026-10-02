@@ -32,6 +32,12 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Validate catalogue geometry and combinations
+        run: node scripts/validate-catalog.mjs
+      - name: Validate hats and single-eye frames against the native head
+        run: |
+          node scripts/validate-hat-fit.mjs
+          node scripts/validate-eyewear-fit.mjs
       - name: Validate robot behavior
         run: node scripts/validate-behavior.mjs
       - name: Validate all outfit exports

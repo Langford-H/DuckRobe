@@ -12,7 +12,7 @@ import * as outfitModule from '../src/outfits.js';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const publicRoot = path.join(projectRoot, 'public');
-const outputRoot = path.resolve(process.argv.find((argument) => argument.startsWith('--out='))?.slice(6) || '/tmp/duckrobe-export-v2-validation');
+const outputRoot = path.resolve(process.argv.find((argument) => argument.startsWith('--out='))?.slice(6) || '/tmp/duckrobe-export-v3-validation');
 const all = process.argv.includes('--all');
 globalThis.DOMParser = DOMParser;
 globalThis.XMLSerializer = XMLSerializer;
@@ -66,30 +66,37 @@ for (const [name, body] of bodies) {
   anchorDefinitions[name] = { bodyName: name, localPosition: [0, 0, 0], localQuaternion: body.getWorldQuaternion(new Quaternion()).invert().toArray(), defaultWorldPosition: body.getWorldPosition(new Vector3()).toArray() };
 }
 const robot = { group, bodies, metadata: { ...manifest, kinematics, defaultPose: DEFAULT_POSE, bodyColors: DEFAULT_ROBOT_COLORS, groundOffset, anchorDefinitions } };
-const slots = ['hat', 'eyewear', 'body', 'accessory', 'legwear'];
-const emptySelection = Object.fromEntries(slots.map((slot) => [slot, null]));
+const { SLOT_IDS: slots, ACCESSORY_REGIONS: regions, normalizeSelection, selectedItemIds } = outfitModule;
+const emptySelection = normalizeSelection({});
 const outfits = outfitModule.OUTFITS;
 const items = outfitModule.ITEMS;
-assert(Array.isArray(outfits) && outfits.length === 24, 'The curated catalog must contain exactly 24 outfits.');
-assert.equal(new Set(outfits.map((outfit) => outfit.id)).size, 24, 'Outfit IDs must be unique.');
+assert(Array.isArray(outfits) && outfits.length === 100, 'The curated catalog must contain exactly 100 outfits.');
+assert.equal(new Set(outfits.map((outfit) => outfit.id)).size, 100, 'Outfit IDs must be unique.');
 assert(Array.isArray(items) && items.length > 0, 'Independent wardrobe items are required.');
 const itemIndex = new Map(items.map((item) => [item.id, item]));
 assert.equal(itemIndex.size, items.length, 'Item IDs must be unique.');
 for (const outfit of outfits) {
   assert.deepEqual(Object.keys(outfit.selection).sort(), [...slots].sort());
+  assert.deepEqual(Object.keys(outfit.selection.accessory).sort(), [...regions].sort());
   for (const slot of slots) {
-    const id = outfit.selection[slot];
-    if (id === null) continue;
-    assert.equal(itemIndex.get(id)?.slot, slot, `Outfit ${outfit.id} has an invalid ${slot} item.`);
-    assert.notEqual(id, outfit.id, 'Selection must store item IDs, not outfit IDs.');
+    for (const id of selectedItemIds(outfit.selection, slot)) {
+      assert.equal(itemIndex.get(id)?.slot, slot, `Outfit ${outfit.id} has an invalid ${slot} item.`);
+      assert.notEqual(id, outfit.id, 'Selection must store item IDs, not outfit IDs.');
+      if (slot === 'accessory') assert.equal(outfit.selection.accessory[itemIndex.get(id).region], id);
+    }
   }
 }
 const pick = (slot, index) => outfits[index].selection[slot] || items.find((item) => item.slot === slot)?.id;
+const pickAccessory = (region, index = 0) => {
+  const choices = items.filter(item => item.slot === 'accessory' && item.region === region);
+  assert(choices.length, `Missing accessory library region ${region}.`);
+  return choices[index % choices.length].id;
+};
 const chosenOutfits = all ? outfits : outfits.filter((outfit, index) => index % 6 === 0);
 const cases = chosenOutfits.map((outfit) => ({
-  id: outfit.id, name: outfit.en || outfit.name, selection: { ...outfit.selection },
+  id: outfit.id, name: outfit.en || outfit.name, selection: { ...outfit.selection }, bodyColors: outfit.bodyColors,
 }));
-const mixedSelection = { hat: pick('hat', 0), eyewear: pick('eyewear', 7), body: pick('body', 13), accessory: pick('accessory', 19), legwear: pick('legwear', 23) };
+const mixedSelection = { hat: pick('hat', 0), eyewear: pick('eyewear', 7), body: pick('body', 13), accessory: Object.fromEntries(regions.map((region,index) => [region,pickAccessory(region,index+2)])), legwear: pick('legwear', 23) };
 cases.push({ id: 'mixed-five-slots', name: 'Five-slot mix', selection: mixedSelection, multiBodyLegwear: true });
 cases.push({ id: 'partial-removal', name: 'Eyewear and boots', selection: { ...emptySelection, eyewear: pick('eyewear', 10), legwear: pick('legwear', 4) }, multiBodyLegwear: true });
 cases.push({ id: 'legwear-only', name: 'Boots only', selection: { ...emptySelection, legwear: pick('legwear', 18) }, multiBodyLegwear: true });
@@ -97,7 +104,12 @@ cases.push({ id: 'custom-body-colors', name: 'Sea-glass duck', selection: mixedS
 cases.push({ id: 'metadata-body-colors', name: 'Rose duck', selection: { ...emptySelection }, metadataColors: { shell: '#d8b6cb', accent: '#425e6f' } });
 cases.push({ id: 'explicit-body-colors', name: 'Butter duck', selection: { ...outfits[2].selection }, metadataColors: { shell: '#d8b6cb', accent: '#425e6f' }, bodyColors: { shell: '#F6E4BA', accent: '#80A89A' } });
 cases.push({ id: 'bare-orange-robot', name: 'Original orange Microduck', selection: { ...emptySelection } });
-cases.push({ id: 'active-behavior-export', name: 'Export during motion', selection: { ...outfits[0].selection }, activeBehavior: true });
+cases.push({ id: 'active-behavior-export', name: 'Export three accessories during motion', selection: mixedSelection, activeBehavior: true, allAccessoryRegions: true });
+cases.push({ id: 'mixed-multi-accessory', name: 'Three independent accessories', selection: { ...mixedSelection, accessory: Object.fromEntries(regions.map((region,index) => [region,pickAccessory(region,index+8)])) }, allAccessoryRegions: true });
+cases.push({ id: 'accessory-region-removal', name: 'Remove only chest accessory', selection: { ...mixedSelection, accessory: { ...mixedSelection.accessory, chest: null } } });
+cases.push({ id: 'legacy-scalar-accessory', name: 'Legacy single accessory migration', selection: { ...emptySelection, accessory: pickAccessory('side',5) } });
+for (const region of regions) cases.push({ id: `accessory-${region}-only`, name: `Independent ${region} accessory`, selection: { ...emptySelection, accessory: { ...emptySelection.accessory, [region]: pickAccessory(region,4) } } });
+cases.push({ id: 'accessory-wrong-region', name: 'Reject accessory in a different region', selection: { ...emptySelection, accessory: { chest: pickAccessory('back',0), side: pickAccessory('chest',0), back: 'unknown-item' } } });
 const requestedCaseIds = process.argv.find((argument) => argument.startsWith('--cases='))?.slice(8).split(',');
 if (requestedCaseIds) for (const id of requestedCaseIds) assert(cases.some((testCase) => testCase.id === id), `Unknown export validation case ${id}.`);
 const activeCases = requestedCaseIds ? cases.filter((testCase) => requestedCaseIds.includes(testCase.id)) : cases;
@@ -125,8 +137,12 @@ function checkFiles(bundle, testCase) {
   assert.equal(bundle.manifest.joints.length, 14);
   assert.equal(mjcf.getElementsByTagName('freejoint').length, 1);
   assert.equal(Array.from(urdf.getElementsByTagName('joint')).filter((joint) => joint.getAttribute('type') === 'revolute').length, 14);
-  assert.equal(bundle.manifest.formatVersion, 2);
+  assert.equal(bundle.manifest.formatVersion, 3);
   assert.deepEqual(Object.keys(bundle.manifest.selection).sort(), [...slots].sort());
+  const selection = normalizeSelection(testCase.selection);
+  assert.deepEqual(bundle.manifest.selection, selection);
+  assert.deepEqual(bundle.manifest.accessoryRegions, regions);
+  assert.deepEqual(bundle.manifest.selectedItemIds, selectedItemIds(selection));
   const expectedColors = normalizeRobotColors(testCase.bodyColors || testCase.colors || testCase.metadataColors || DEFAULT_ROBOT_COLORS);
   assert.deepEqual(bundle.manifest.bodyColors, expectedColors);
   for (const override of bundle.manifest.visualPaletteOverrides) {
@@ -135,15 +151,23 @@ function checkFiles(bundle, testCase) {
     assert.deepEqual(override.rgba, expectedRgba, `Body palette mismatch for ${override.meshFile}.`);
   }
   for (const part of bundle.manifest.clothing) {
-    assert.equal(part.itemId, testCase.selection[part.slot]);
+    assert.equal(part.itemId, part.slot === 'accessory' ? selection.accessory[part.region] : selection[part.slot]);
     assert.equal(itemIndex.get(part.itemId)?.slot, part.slot);
+    if (part.slot === 'accessory') assert.equal(part.region, itemIndex.get(part.itemId).region, 'Accessory region must follow the actual item.');
     assert(bodies.has(part.bodyName), `Unknown garment mount ${part.bodyName}.`);
   }
   for (const slot of slots) {
     const count = bundle.manifest.clothing.filter((part) => part.slot === slot).length;
-    assert(testCase.selection[slot] ? count > 0 : count === 0, `${slot} removal/selection disagrees with exported geometry.`);
+    assert(selectedItemIds(selection,slot).length ? count > 0 : count === 0, `${slot} removal/selection disagrees with exported geometry.`);
+    for (const id of selectedItemIds(selection,slot)) assert(bundle.manifest.clothing.some(part => part.slot === slot && part.itemId === id), `Selected ${slot} item ${id} was omitted.`);
   }
-  if (testCase.selection.eyewear) {
+  for (const region of regions) {
+    const regionMeshes = bundle.manifest.clothing.filter(part => part.slot === 'accessory' && part.region === region);
+    assert(selection.accessory[region] ? regionMeshes.length > 0 : regionMeshes.length === 0, `Accessory ${region} removal/selection disagrees with exported geometry.`);
+    assert(new Set(regionMeshes.map(part => part.itemId)).size <= 1, 'Each accessory region holds at most one independent item.');
+  }
+  if (testCase.allAccessoryRegions) assert(regions.every(region => bundle.manifest.clothing.some(part => part.slot === 'accessory' && part.region === region)));
+  if (selection.eyewear) {
     const eyewear = bundle.manifest.clothing.filter((part) => part.slot === 'eyewear');
     assert.equal(eyewear.filter((part) => part.detailName?.endsWith(':single-eyepiece-rim')).length, 1, 'Microduck eyewear must have one eyepiece rim.');
     assert.equal(eyewear.filter((part) => part.detailName?.endsWith(':single-optical-lens')).length, 1, 'Microduck eyewear must have one optical lens.');
@@ -212,7 +236,7 @@ for (const [index, testCase] of activeCases.entries()) {
       }
     } else await writeFile(destination, bytes);
   }
-  summary.push({ case: testCase.id, clothingMeshes: bundle.manifest.clothing.length, robotJoints: bundle.manifest.joints.length, bodyColors: bundle.manifest.bodyColors });
+  summary.push({ case: testCase.id, clothingMeshes: bundle.manifest.clothing.length, robotJoints: bundle.manifest.joints.length, bodyColors: bundle.manifest.bodyColors, accessory: bundle.manifest.selection.accessory });
   if ((index + 1) % 10 === 0 || index === activeCases.length - 1) console.log(`Validated export structure ${index + 1}/${activeCases.length}.`);
 }
 await writeFile(path.join(outputRoot, 'export-validation.json'), JSON.stringify({ catalogCount: outfits.length, cases: summary }, null, 2));

@@ -65,7 +65,7 @@ try {
     deploymentBase = base;
     requests.length = 0;
     const entryFile = path.join(directory, 'entry.mjs');
-    await writeFile(entryFile, `export { loadRobot, robotAssetUrl } from ${JSON.stringify(path.join(projectRoot, 'src/robot.js'))};\nexport { buildExportBundle } from ${JSON.stringify(path.join(projectRoot, 'src/export.js'))};\nexport { OUTFITS } from ${JSON.stringify(path.join(projectRoot, 'src/outfits.js'))};`);
+    await writeFile(entryFile, `export { loadRobot, robotAssetUrl } from ${JSON.stringify(path.join(projectRoot, 'src/robot.js'))};\nexport { buildExportBundle } from ${JSON.stringify(path.join(projectRoot, 'src/export.js'))};\nexport { OUTFITS, ITEMS, ACCESSORY_REGIONS, normalizeSelection } from ${JSON.stringify(path.join(projectRoot, 'src/outfits.js'))};`);
     const built = await build({
       configFile: false, root: projectRoot, base, logLevel: 'silent',
       build: { write: false, minify: false, lib: { entry: entryFile, formats: ['es'], fileName: 'assets-check' }, rollupOptions: { output: { inlineDynamicImports: true } } },
@@ -74,7 +74,7 @@ try {
     const code = outputs.find(output => output.type === 'chunk' && output.isEntry).code;
     const filename = path.join(directory, base === '/' ? 'root.mjs' : 'pages.mjs');
     await writeFile(filename, code);
-    const { loadRobot, robotAssetUrl, buildExportBundle, OUTFITS } = await import(pathToFileURL(filename).href);
+    const { loadRobot, robotAssetUrl, buildExportBundle, OUTFITS, ITEMS, ACCESSORY_REGIONS, normalizeSelection } = await import(pathToFileURL(filename).href);
     const prefix = `${base}robot/`;
     assert.equal(robotAssetUrl('/robot/source/LICENSE'), `${prefix}source/LICENSE`);
     assert.equal(robotAssetUrl(`${prefix}source/LICENSE`), `${prefix}source/LICENSE`, 'Asset paths must not receive the base twice.');
@@ -93,8 +93,10 @@ try {
     assert.equal(metadata.meshBaseUrl, metadata.native.meshBaseUrl);
     assert.deepEqual(metadata.files, sourceManifest.files, 'Source asset hashes and attribution must stay unchanged.');
 
-    const options = { robot, selection: OUTFITS[0].selection, outfitName: 'Subpath regression', createArchive: base !== '/' };
+    const selection = normalizeSelection({ ...OUTFITS[0].selection, accessory: Object.fromEntries(ACCESSORY_REGIONS.map(region => [region, ITEMS.find(item => item.slot === 'accessory' && item.region === region).id])) });
+    const options = { robot, selection, outfitName: 'Subpath regression', createArchive: base !== '/' };
     const bundle = await buildExportBundle(options);
+    for (const region of ACCESSORY_REGIONS) assert(bundle.manifest.clothing.some(part => part.region === region && part.itemId === selection.accessory[region]), `Subpath export omitted ${region} accessory.`);
     if (reference) {
       for (const [name, bytes] of Object.entries(reference.files)) {
         if (name === 'manifest.json') continue;
@@ -109,6 +111,10 @@ try {
       const rawBundle = await buildExportBundle({ ...options, robot: rawRobot, createArchive: false });
       assert.equal(digest(rawBundle.files['microduck.xml']), digest(bundle.files['microduck.xml']));
       assert.equal(digest(rawBundle.files['microduck.urdf']), digest(bundle.files['microduck.urdf']));
+      const legacySelection = { ...selection, accessory: selection.accessory.side };
+      const legacyBundle = await buildExportBundle({ ...options, selection: legacySelection, createArchive: false });
+      assert.deepEqual(legacyBundle.manifest.selection, normalizeSelection(legacySelection));
+      assert(legacyBundle.manifest.clothing.filter(part => part.slot === 'accessory').every(part => part.region === 'side' && part.itemId === selection.accessory.side), 'Legacy scalar selection introduced another accessory.');
     } else reference = bundle;
     assert(requests.every(url => url.startsWith(prefix)), `Asset requests escaped ${prefix}: ${requests.join(', ')}`);
     for (const file of sourceManifest.native.meshFiles) assert(requests.includes(`${prefix}source/assets/${file}`), `Missing native mesh fetch ${file}.`);
@@ -116,7 +122,7 @@ try {
     console.log(`Passed ${base}: real robot loading and ${sourceManifest.native.meshFiles.length}-mesh export; ${requests.length} asset requests stay inside the deployment prefix.`);
   }
   assert.equal(digest(await readFile(manifestFile)), digest(manifestBytes), 'Source manifest was modified.');
-  console.log('Root paths, Pages subpaths, Node fallback, URL idempotence and self-contained ZIP content passed.');
+  console.log('Root paths, Pages subpaths, Node fallback, three accessory regions, legacy scalar migration, URL idempotence and self-contained ZIP content passed.');
 } finally {
   globalThis.fetch = originalFetch;
   globalThis.Request = OriginalRequest;

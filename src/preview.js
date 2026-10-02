@@ -138,13 +138,15 @@ export async function createPreview({ viewer, colors, selection, onReaction = ()
     try {
       while (queued.size) {
         await frame();
+        // A category change can cancel the queue while this frame is pending.
+        if (!queued.size) break;
         const [key, job] = queued.entries().next().value; queued.delete(key);
         const url = thumbnail(job.selection, job.options);
         api.thumbnails.set(key, url);
         if (api.thumbnails.size > 160) api.thumbnails.delete(api.thumbnails.keys().next().value);
         job.onReady(key, url); api.thumbnailsPending = queued.size;
       }
-    } finally { working = false; }
+    } finally { working = false; api.thumbnailsPending = queued.size; }
   }
   return api;
 }

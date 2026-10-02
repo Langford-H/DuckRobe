@@ -1,7 +1,31 @@
 import { MathUtils, Vector3 } from 'three';
 
 const TAU = Math.PI * 2;
-const DURATIONS = { observe: 2.7, hop: 1.25, turn: 3.4, dance: 3.6, greet: 1.4, rest: 2.4 };
+export const ACTIONS = Object.freeze([
+  { id: 'hop', en: 'Little hop', zh: '蹦一下', duration: 1.25, featured: true, energy: 'lively' },
+  { id: 'dance', en: 'Happy dance', zh: '快乐摇摆舞', duration: 3.6, featured: true, energy: 'lively' },
+  { id: 'turn', en: 'Little twirl', zh: '转个小圈', duration: 3.4, featured: true, energy: 'lively' },
+  { id: 'greet', en: 'Say hello', zh: '歪头打招呼', duration: 1.4, energy: 'quiet' },
+  { id: 'observe', en: 'Curious glance', zh: '好奇瞧瞧', duration: 2.7, energy: 'quiet' },
+  { id: 'rest', en: 'Take a breath', zh: '安静歇一会', duration: 4.8, energy: 'quiet' },
+  { id: 'peek', en: 'A shy peek', zh: '探头偷瞄', duration: 2.3, energy: 'quiet' },
+  { id: 'tilt', en: 'Little head tilts', zh: '左右歪歪头', duration: 2.4, energy: 'quiet' },
+  { id: 'nod', en: 'Yes, yes!', zh: '认真点点头', duration: 2.1, energy: 'quiet' },
+  { id: 'sway', en: 'Gentle sway', zh: '慢慢晃一晃', duration: 3.8, energy: 'quiet' },
+  { id: 'tiny-steps', en: 'Tiny marching steps', zh: '小碎步踏踏', duration: 3.2, energy: 'lively' },
+  { id: 'double-hop', en: 'Two happy hops', zh: '开心连跳两下', duration: 1.9, energy: 'lively' },
+  { id: 'shimmy', en: 'Little wiggle', zh: '抖抖小身子', duration: 2.2, energy: 'lively' },
+  { id: 'toe-tap', en: 'Tap a little rhythm', zh: '脚尖点拍子', duration: 3, energy: 'lively' },
+  { id: 'bow', en: 'A polite bow', zh: '礼貌鞠个躬', duration: 2.6, energy: 'quiet' },
+  { id: 'look-around', en: 'Look all around', zh: '环顾小世界', duration: 4.2, energy: 'quiet' },
+].map(action => Object.freeze({ featured: false, ...action })));
+const ACTION_BY_ID = new Map(ACTIONS.map(action => [action.id, action]));
+const DURATIONS = Object.fromEntries(ACTIONS.map(action => [action.id, action.duration]));
+const QUIET_ACTIONS = new Set(ACTIONS.filter(action => action.energy === 'quiet').map(action => action.id));
+const IDLE_WEIGHTS = {
+  rest: 7, observe: 4, peek: 2, tilt: 2, nod: 1, sway: 1, 'look-around': 2,
+  hop: 1, dance: .4, turn: .3, 'tiny-steps': .6, 'double-hop': .4, 'toe-tap': .6,
+};
 const clamp = MathUtils.clamp;
 const smooth = value => { const t = clamp(value, 0, 1); return t * t * (3 - 2 * t); };
 const pulse = (time, start, end) => time <= start || time >= end ? 0 : Math.sin(Math.PI * (time - start) / (end - start)) ** 2;
@@ -45,6 +69,70 @@ function actionFrame(kind, progress) {
     frame.offsets.head_pitch = Math.sin(progress * TAU * cycles) * .045 * envelope;
     if (kind === 'turn') frame.yaw = TAU * smooth(progress);
     else frame.yaw = Math.sin(progress * TAU * 1.5) * .13 * envelope;
+  } else if (kind === 'rest') {
+    const breath = Math.sin(progress * Math.PI) * envelope;
+    frame.offsets.neck_pitch = -.012 * breath;
+    frame.offsets.head_pitch = .012 * breath;
+  } else if (kind === 'peek') {
+    const peek = pulse(progress, .06, .94);
+    frame.offsets.neck_pitch = -.13 * peek;
+    frame.offsets.head_pitch = .10 * peek;
+    frame.offsets.head_yaw = .31 * peek;
+    frame.offsets.head_roll = -.08 * peek;
+  } else if (kind === 'tilt') {
+    frame.offsets.head_roll = Math.sin(progress * TAU) * .22 * envelope;
+    frame.offsets.head_yaw = Math.sin(progress * TAU) * -.065 * envelope;
+    frame.offsets.head_pitch = -.045 * envelope;
+  } else if (kind === 'nod') {
+    const nod = pulse(progress, .08, .44) + pulse(progress, .48, .86);
+    frame.offsets.head_pitch = .22 * nod;
+    frame.offsets.neck_pitch = -.045 * nod;
+    frame.jaw = pulse(progress, .69, .84) * .045;
+  } else if (kind === 'sway') {
+    const sway = Math.sin(progress * TAU * 1.5) * envelope;
+    frame.roll = sway * .044;
+    frame.offsets.head_roll = -sway * .10;
+    frame.offsets.neck_pitch = -.025 * envelope;
+  } else if (kind === 'tiny-steps') {
+    const beat = Math.sin(progress * TAU * 3);
+    const left = Math.max(0, beat) * .27 * envelope;
+    const right = Math.max(0, -beat) * .27 * envelope;
+    bend(frame, 'left', left); bend(frame, 'right', right);
+    frame.support = left > .012 ? 'right' : right > .012 ? 'left' : 'both';
+    frame.offsets.head_pitch = Math.sin(progress * TAU * 6) * .025 * envelope;
+    frame.offsets.head_yaw = .06 * envelope;
+  } else if (kind === 'double-hop') {
+    const crouch = pulse(progress, 0, .23) * .19 + pulse(progress, .34, .57) * .22 + pulse(progress, .72, .98) * .18;
+    bend(frame, 'left', crouch); bend(frame, 'right', crouch);
+    frame.lift = (pulse(progress, .16, .44) + pulse(progress, .50, .82)) * .019;
+    frame.offsets.head_pitch = -.05 * envelope;
+    frame.jaw = (pulse(progress, .22, .37) + pulse(progress, .57, .73)) * .085;
+  } else if (kind === 'shimmy') {
+    const wiggle = Math.sin(progress * TAU * 4) * envelope;
+    frame.yaw = wiggle * .065;
+    frame.offsets.head_yaw = -wiggle * .11;
+    frame.offsets.head_roll = Math.cos(progress * TAU * 4) * .045 * envelope;
+    frame.offsets.left_hip_yaw = wiggle * .035;
+    frame.offsets.right_hip_yaw = wiggle * .035;
+  } else if (kind === 'toe-tap') {
+    const left = (pulse(progress, .08, .26) + pulse(progress, .28, .46)) * .16;
+    const right = (pulse(progress, .52, .70) + pulse(progress, .72, .90)) * .16;
+    bend(frame, 'left', left); bend(frame, 'right', right);
+    frame.offsets.left_ankle += left * .45;
+    frame.offsets.right_ankle -= right * .45;
+    frame.support = left > .012 ? 'right' : right > .012 ? 'left' : 'both';
+    frame.offsets.head_roll = (right - left) * .35;
+  } else if (kind === 'bow') {
+    const bow = pulse(progress, .04, .96);
+    bend(frame, 'left', bow * .11); bend(frame, 'right', bow * .11);
+    frame.pitch = bow * .075;
+    frame.offsets.neck_pitch = bow * .12;
+    frame.offsets.head_pitch = bow * .20;
+  } else if (kind === 'look-around') {
+    frame.offsets.head_yaw = Math.sin(progress * TAU) * .34 * envelope;
+    frame.offsets.head_pitch = Math.sin(progress * TAU - Math.PI / 2) * .10 * envelope;
+    frame.offsets.head_roll = Math.sin(progress * TAU) * -.04 * envelope;
+    frame.offsets.neck_pitch = -.035 * envelope;
   }
   return frame;
 }
@@ -67,7 +155,7 @@ export function createBehaviorController({ group, bodies, setJoint, defaultPose,
   let support = 'both';
 
   function trigger(kind = 'hop') {
-    if (!['hop', 'dance', 'turn', 'greet', 'observe'].includes(kind) || externalInteraction) return false;
+    if (!ACTION_BY_ID.has(kind) || externalInteraction) return false;
     pending = kind;
     return true;
   }
@@ -115,8 +203,11 @@ export function createBehaviorController({ group, bodies, setJoint, defaultPose,
   }
 
   function chooseIdle() {
-    const choices = ['observe', 'hop', 'dance', 'turn', 'rest', 'rest'].filter(kind => kind !== lastIdle);
-    const kind = choices[Math.floor(clamp(random(), 0, .999999) * choices.length)];
+    const previousWasLively = ACTION_BY_ID.get(lastIdle)?.energy === 'lively';
+    const choices = Object.entries(IDLE_WEIGHTS).filter(([kind]) => kind !== lastIdle && (!previousWasLively || QUIET_ACTIONS.has(kind)));
+    const total = choices.reduce((sum, [, weight]) => sum + weight, 0);
+    let pick = clamp(random(), 0, .999999) * total;
+    const kind = choices.find(([, weight]) => { pick -= weight; return pick < 0; })?.[0] || 'rest';
     lastIdle = kind;
     active = { kind, start: elapsed, duration: DURATIONS[kind] };
   }
@@ -161,7 +252,7 @@ export function createBehaviorController({ group, bodies, setJoint, defaultPose,
     const recovering = elapsed < recoveryUntil;
     const pointerActive = enabled && !busy && !recovering && pointer?.active;
     const near = pointerActive ? clamp(Number(pointer.near) || 0, 0, 1) : 0;
-    if (pointerActive && active && !active.manual && !['rest', 'observe', 'greet'].includes(active.kind)) {
+    if (pointerActive && active && !active.manual && !QUIET_ACTIONS.has(active.kind)) {
       active = null; nextIdle = elapsed + 2;
     }
     if (near < .35) nearLatched = false;
@@ -176,7 +267,8 @@ export function createBehaviorController({ group, bodies, setJoint, defaultPose,
       pending = null;
     }
     if (active && elapsed - active.start >= active.duration) {
-      active = null; nextIdle = elapsed + 1.2 + random() * 2.3;
+      const lively = ACTION_BY_ID.get(active.kind)?.energy === 'lively';
+      active = null; nextIdle = elapsed + (lively ? 2 : 1.3) + random() * (lively ? 3 : 2.5);
     }
     if (enabled && !busy && !recovering && !active && !pointerActive && elapsed >= nextIdle) chooseIdle();
 
@@ -208,8 +300,8 @@ export function createBehaviorController({ group, bodies, setJoint, defaultPose,
     plantTurningFoot(dt);
     if (jawPivot && jawAxis) jawPivot.quaternion.setFromAxisAngle(jawAxis, blended.jaw);
     groundFeet(blended.lift);
-    return { kind: busy ? 'inspect' : active?.kind || (pointerActive ? 'curious' : 'rest'), support, lift: blended.lift, footBounds: { ...footBounds }, enabled: Boolean(enabled), interacting: busy };
+    return { kind: busy ? 'inspect' : active?.kind || (pointerActive ? 'curious' : 'rest'), active: Boolean(active), manual: Boolean(active?.manual), support, lift: blended.lift, footBounds: { ...footBounds }, enabled: Boolean(enabled), interacting: busy };
   }
 
-  return { animate, trigger, setInteraction, getState: () => ({ kind: active?.kind || 'rest', elapsed, support, footBounds: { ...footBounds } }) };
+  return { animate, trigger, setInteraction, getState: () => ({ kind: active?.kind || 'rest', active: Boolean(active), manual: Boolean(active?.manual), elapsed, support, footBounds: { ...footBounds } }) };
 }

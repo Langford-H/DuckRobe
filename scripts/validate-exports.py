@@ -27,6 +27,7 @@ except ImportError as error:
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE = REPO / "public/robot/source/robot_allcollisions.xml"
 SLOTS = ("hat", "eyewear", "body", "accessory", "legwear")
+ACCESSORY_REGIONS = ("chest", "side", "back")
 SHELL_MESHES = {"top_head_shell.stl", "left_shell.stl", "right_shell.stl", "upper_leg_left.stl",
                 "upper_leg_right.stl", "trunk_base.stl", "face_part.stl"}
 ACCENT_MESHES = {"jaw.stl", "jaw_soft.stl", "soft_mouth_top.stl", "bottom_head_shell.stl",
@@ -135,21 +136,67 @@ def palette_overrides(source_xml, manifest):
 def validate_selection(manifest, source_xml):
     selection = manifest["selection"]
     require(isinstance(selection, dict) and set(selection) == set(SLOTS), "Selection must contain exactly the five wardrobe slots")
+    accessory = selection["accessory"]
+    if manifest.get("formatVersion", 2) >= 3:
+        require(isinstance(accessory, dict), "Version 3 must export canonical regional accessory selection")
+        require(manifest.get("accessoryRegions") == list(ACCESSORY_REGIONS), "Version 3 accessory region order changed")
+    legacy_accessory = not isinstance(accessory, dict)
+    if legacy_accessory:
+        require(accessory is None or (isinstance(accessory, str) and accessory), "Invalid legacy selected accessory ID")
+        declared_regions = {part.get("region") or "chest" for part in manifest["clothing"] if part.get("slot") == "accessory"}
+        require(len(declared_regions) <= 1, "A legacy scalar accessory must represent one region")
+        region = next(iter(declared_regions), "chest")
+        require(region in ACCESSORY_REGIONS, f"Unknown legacy accessory region: {region}")
+        accessories = dict.fromkeys(ACCESSORY_REGIONS)
+        accessories[region] = accessory
+    else:
+        require(set(accessory) == set(ACCESSORY_REGIONS), "Accessory selection must contain chest, side and back")
+        accessories = dict(accessory)
+    for region, item_id in accessories.items():
+        require(item_id is None or (isinstance(item_id, str) and item_id), f"Invalid selected accessory ID: {region}")
+    selected_accessories = [item_id for item_id in accessories.values() if item_id is not None]
+    require(len(set(selected_accessories)) == len(selected_accessories), "An accessory item cannot occupy multiple regions")
+    if manifest.get("formatVersion", 2) >= 3:
+        selected_items = []
+        for slot in SLOTS:
+            selected_items.extend(selected_accessories if slot == "accessory" else [selection[slot]] if selection[slot] is not None else [])
+        require(manifest.get("selectedItemIds") == selected_items, "Selected item list disagrees with canonical wardrobe selection")
+    legacy_region = next((region for region, item_id in accessories.items() if item_id is not None), "chest")
     native_bodies = {body.get("name") for body in source_xml.findall(".//worldbody//body")}
     slots = {slot: {"itemId": selection[slot], "meshes": 0, "bodies": set()} for slot in SLOTS}
+    slots["accessory"]["itemId"] = None
+    slots["accessory"]["regions"] = {
+        region: {"itemId": item_id, "meshes": 0, "bodies": set()} for region, item_id in accessories.items()
+    }
     for slot, item_id in selection.items():
-        require(item_id is None or (isinstance(item_id, str) and item_id), f"Invalid selected item ID: {slot}")
+        if slot != "accessory":
+            require(item_id is None or (isinstance(item_id, str) and item_id), f"Invalid selected item ID: {slot}")
     for index, part in enumerate(manifest["clothing"]):
         slot = part.get("slot")
         require(slot in slots, f"Unknown garment slot: {slot}")
-        require(selection[slot] is not None, f"Removed slot still has geometry: {slot}")
-        require(part.get("itemId") == selection[slot], f"Garment item ID disagrees with selected {slot}: {part.get('itemId')}")
+        if slot == "accessory":
+            region = part.get("region") or (legacy_region if legacy_accessory else None)
+            require(region in ACCESSORY_REGIONS, f"Unknown or missing accessory part region: {region}")
+            selected_id = accessories[region]
+            require(selected_id is not None, f"Removed accessory region still has geometry: {region}")
+            require(part.get("itemId") == selected_id, f"Accessory item disagrees with selected {region}: {part.get('itemId')}")
+            regional = slots[slot]["regions"][region]
+            regional["meshes"] += 1
+            regional["bodies"].add(part.get("bodyName"))
+        else:
+            require(selection[slot] is not None, f"Removed slot still has geometry: {slot}")
+            require(part.get("itemId") == selection[slot], f"Garment item ID disagrees with selected {slot}: {part.get('itemId')}")
         require(part.get("bodyName") in native_bodies, f"Unknown garment body anchor: {part.get('bodyName')}")
         require(part.get("name") == f"duckrobe_{slot}_{index:03d}", f"Garment name disagrees with slot/index: {part.get('name')}")
         slots[slot]["meshes"] += 1
         slots[slot]["bodies"].add(part["bodyName"])
     for slot, stats in slots.items():
-        require(selection[slot] is None or stats["meshes"] > 0, f"Selected slot has no exported geometry: {slot}")
+        if slot == "accessory":
+            for region, regional in stats["regions"].items():
+                require(regional["itemId"] is None or regional["meshes"] > 0, f"Selected accessory region has no geometry: {region}")
+                regional["bodies"] = sorted(regional["bodies"])
+        else:
+            require(selection[slot] is None or stats["meshes"] > 0, f"Selected slot has no exported geometry: {slot}")
         stats["bodies"] = sorted(stats["bodies"])
     if selection["eyewear"] is not None:
         eyewear = [part for part in manifest["clothing"] if part["slot"] == "eyewear"]
@@ -456,7 +503,7 @@ def validate_preview(case, model, reference, manifest, obj_vertices, compare_dyn
 def validate_case(case, source_path, source_xml, reference, source_hashes, geometry_only=False):
     started = time.monotonic()
     manifest = json.loads((case / "manifest.json").read_text())
-    require(manifest["formatVersion"] == 2, "Expected five-slot export manifest version 2")
+    require(manifest["formatVersion"] in (2, 3), "Expected five-slot export manifest version 2 or 3")
     require(manifest["formats"] == {"urdf": "microduck.urdf", "mjcf": "microduck.xml"}, "Both default formats must be present")
     require(manifest["units"] == {"length": "metre", "angle": "radian"}, "Unexpected export units")
     slots = validate_selection(manifest, source_xml)
@@ -590,13 +637,17 @@ def main():
                                      "native actuator arrays", "full mass matrix", "gravity/Coriolis qfrc_bias",
                                      "passive forces qfrc_passive", "actuator forces", "URDF/MJCF standing body transforms"] if not args.geometry_only else [],
               "geometryValidation": ["real MJCF compilation", "unchanged native XML definitions and compiled parameters",
-                                     "five-slot item mapping and body mounts", "URDF/MJCF standing body transforms",
+                                     "five-slot item mapping, regional accessories and native body mounts", "URDF/MJCF standing body transforms",
                                      "base colors", "OBJ faces and relative asset references", "shoe grounding",
                                      "exactly one eyepiece rim and optical lens when eyewear is selected"],
               "floorValidation": "Ankle garment OBJ bounds reproduce standingMinZ and previewGroundAdjustment; native feet and shoes remain above the floor, with the lowest at z=0",
               "derivedFieldExceptions": {"dof_length": "MuJoCo derives approximate angular length scale from geom bounding radii; visual garments enlarge these bounds"},
               "allowedVisualChanges": "Native visual geom rgba values must match manifest.visualPaletteOverrides; collision colors and all other native geom attributes remain unchanged",
               "wardrobeSlots": list(SLOTS),
+              "accessoryRegions": list(ACCESSORY_REGIONS),
+              "multiAccessoryCases": sum(sum(region["itemId"] is not None for region in item.get("slots", {}).get("accessory", {}).get("regions", {}).values()) > 1 for item in results),
+              "allAccessoryRegionsCases": sum(all(region.get("itemId") is not None for region in item.get("slots", {}).get("accessory", {}).get("regions", {}).values())
+                                               for item in results if item.get("slots", {}).get("accessory", {}).get("regions")),
               "multiBodyLegwearCases": sum(len(item.get("slots", {}).get("legwear", {}).get("bodies", [])) > 1 for item in results),
               "monocularEyewearCases": sum(item.get("monocularEyewear", False) for item in results),
               "bodyColorCombinations": sorted({(item["bodyColors"]["shell"], item["bodyColors"]["accent"])

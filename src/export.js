@@ -1,10 +1,10 @@
 import { Euler, Matrix3, Matrix4, Quaternion, SRGBColorSpace, Vector3 } from 'three';
 import { strToU8, zipSync } from 'fflate';
-import { createOutfitParts } from './outfits.js';
+import { ACCESSORY_REGIONS, SLOT_IDS, createOutfitParts, normalizeSelection, selectedItemIds } from './outfits.js';
 import { normalizeRobotColors, robotAssetUrl, robotPartColor } from './robot.js';
 
 const encoder = new TextEncoder();
-const slots = ['hat', 'eyewear', 'body', 'accessory', 'legwear'];
+const slots = SLOT_IDS;
 const xmlEscape = (value) => String(value).replace(/[&<>"']/g, (character) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;',
 }[character]));
@@ -255,7 +255,7 @@ function clothingMeshes(parts, metadata, files) {
         const path = `meshes/outfits/${name}.obj`;
         const obj = objFromMesh(mesh, transform, name, materialName, materials.length > 1 ? materialIndex : null, standingBodyMatrix);
         files[path] = encoder.encode(obj.text);
-        clothing.push({ slot: part.slot, itemId: part.itemId, detailName: mesh.name, bodyName: part.bodyName, name, path, materialName, rgba: materialRgba(material), vertices: obj.vertices, triangles: obj.triangles,
+        clothing.push({ slot: part.slot, itemId: part.itemId, ...(part.slot === 'accessory' ? { region: part.region || part.group.userData.region } : {}), detailName: mesh.name, bodyName: part.bodyName, name, path, materialName, rgba: materialRgba(material), vertices: obj.vertices, triangles: obj.triangles,
           ...(standingBodyMatrix ? { standingMinZ: obj.standingMinZ } : {}) });
       }
     });
@@ -281,7 +281,7 @@ function appendElement(document, parent, name, attributes) {
 export async function buildExportBundle({ robot, selection, outfitName = 'My Microduck', colors, bodyColors, parts, createArchive = true }) {
   if (!robot?.metadata?.native) throw new Error('Microduck robot assets have not loaded yet.');
   const metadata = robot.metadata;
-  const normalizedSelection = Object.fromEntries(slots.map((slot) => [slot, selection?.[slot] || null]));
+  const normalizedSelection = normalizeSelection(selection);
   const normalizedColors = normalizeRobotColors(bodyColors || colors || metadata.bodyColors);
   const native = metadata.native;
   const sourceBytes = await fetchedBytes(native.xmlUrl);
@@ -325,9 +325,10 @@ export async function buildExportBundle({ robot, selection, outfitName = 'My Mic
   let clothing;
   try {
     for (const part of generatedParts) {
-      if (!slots.includes(part.slot) || !part.itemId || part.itemId !== normalizedSelection[part.slot]) {
-        throw new Error(`Clothing part ${part.slot} does not match the selected item.`);
-      }
+      const region = part.region || part.group.userData.region;
+      const selected = part.slot === 'accessory' ? normalizedSelection.accessory[region] : normalizedSelection[part.slot];
+      if (part.slot === 'accessory' && !ACCESSORY_REGIONS.includes(region)) throw new Error(`Invalid accessory region ${region}.`);
+      if (!slots.includes(part.slot) || !part.itemId || selected !== part.itemId) throw new Error(`Clothing ${part.itemId} does not match the selected ${part.slot}${region ? `/${region}` : ''}.`);
     }
     clothing = clothingMeshes(generatedParts, metadata, files);
   } finally {
@@ -381,8 +382,8 @@ export async function buildExportBundle({ robot, selection, outfitName = 'My Mic
   files['microduck.xml'] = encoder.encode(new XMLSerializer().serializeToString(document));
   files['materials.mtl'] = encoder.encode(clothing.map((part) => `newmtl ${part.materialName}\nKd ${vector(part.rgba.slice(0, 3))}\nd ${number(part.rgba[3])}\n`).join('\n'));
   const manifest = {
-    formatVersion: 2, name: outfitName, selection: normalizedSelection, bodyColors: normalizedColors,
-    wardrobeSlots: slots, units: { length: 'metre', angle: 'radian' },
+    formatVersion: 3, name: outfitName, selection: normalizedSelection, bodyColors: normalizedColors,
+    wardrobeSlots: slots, accessoryRegions: ACCESSORY_REGIONS, selectedItemIds: selectedItemIds(normalizedSelection), units: { length: 'metre', angle: 'radian' },
     formats: { urdf: 'microduck.urdf', mjcf: 'microduck.xml' },
     previewKeyframe: 'duckrobe_preview',
     previewJointPositions: metadata.defaultPose,
@@ -405,7 +406,7 @@ export async function buildExportBundle({ robot, selection, outfitName = 'My Mic
     files: [...Object.keys(files), 'manifest.json', 'README.md'].sort(),
   };
   files['manifest.json'] = encoder.encode(`${JSON.stringify(manifest, null, 2)}\n`);
-  files['README.md'] = strToU8(`# ${outfitName}\n\nOpen \`microduck.xml\` in MuJoCo or \`microduck.urdf\` in your URDF viewer. Keep the extracted directory structure: all mesh paths are relative. Lengths are metres and angles are radians.\n\nThe robot is based on the pinned official Microduck assets described in \`manifest.json\`. Original assets retain the license in \`LICENSE-Microduck.txt\`. Native visual colors use the same DuckRobe palette as the web preview, recorded in \`visualPaletteOverrides\`; source meshes and physical parameters are unchanged. The selected shell and accent colors are saved in \`bodyColors\`. The visible outfit is original DuckRobe geometry, attached to the native robot bodies with zero mass and no collision. It is a visual accessory, not a cloth physics model or a fabrication-ready garment.\n\nMJCF retains upstream inertials, joints, actuator settings and sensors. URDF retains the kinematic hierarchy (including the floating root), inertia tensors, axes, ranges, damping and friction, plus massless fixed clothing links. Native actuator force limits become URDF effort limits. The source does not define velocity limits; the required URDF velocity fields use an explicit 10 rad/s convention, not a hardware rating. MuJoCo-specific actuator gains, armature, sensors and contact masks remain in MJCF.\n\nFor the wardrobe standing pose, load the MJCF keyframe named \`duckrobe_preview\`:\n\n\`\`\`python\nimport mujoco\nmodel = mujoco.MjModel.from_xml_path('microduck.xml')\ndata = mujoco.MjData(model)\nkey = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, 'duckrobe_preview')\nmujoco.mj_resetDataKeyframe(model, data, key)\nmujoco.mj_forward(model, data)\n\`\`\`\n\nFor URDF, apply \`previewJointPositions\` and \`previewRootPose\` from \`manifest.json\` to show the same standing pose. The root pose is world-space, with the quaternion order recorded in the manifest. URDF joint origins retain the official CAD zero reference.\n\nThree.js clothing transforms are flattened into body-local OBJ geometry using stable anchors calibrated in the default standing pose. Web dancing and rotation offsets are not baked into the robot. \`selection\` in the manifest records independent hat, eyewear, body, accessory and legwear item IDs; null means removed. Eyewear has one rim and one lens aligned to the single camera. Legwear can be mounted to multiple native bodies, so shoes follow the actual ankle joints. The body shell and accent colors are recorded separately in \`bodyColors\`. Geometry, normals and base colors are exported; procedural fabric weave shaders and texture maps are not baked into OBJ.\n`);
+  files['README.md'] = strToU8(`# ${outfitName}\n\nOpen \`microduck.xml\` in MuJoCo or \`microduck.urdf\` in your URDF viewer. Keep the extracted directory structure: all mesh paths are relative. Lengths are metres and angles are radians.\n\nThe robot is based on the pinned official Microduck assets described in \`manifest.json\`. Original assets retain the license in \`LICENSE-Microduck.txt\`. Native visual colors use the same DuckRobe palette as the web preview, recorded in \`visualPaletteOverrides\`; source meshes and physical parameters are unchanged. The selected shell and accent colors are saved in \`bodyColors\`. The visible outfit is original DuckRobe geometry, attached to the native robot bodies with zero mass and no collision. It is a visual accessory, not a cloth physics model or a fabrication-ready garment.\n\nMJCF retains upstream inertials, joints, actuator settings and sensors. URDF retains the kinematic hierarchy (including the floating root), inertia tensors, axes, ranges, damping and friction, plus massless fixed clothing links. Native actuator force limits become URDF effort limits. The source does not define velocity limits; the required URDF velocity fields use an explicit 10 rad/s convention, not a hardware rating. MuJoCo-specific actuator gains, armature, sensors and contact masks remain in MJCF.\n\nFor the wardrobe standing pose, load the MJCF keyframe named \`duckrobe_preview\`:\n\n\`\`\`python\nimport mujoco\nmodel = mujoco.MjModel.from_xml_path('microduck.xml')\ndata = mujoco.MjData(model)\nkey = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, 'duckrobe_preview')\nmujoco.mj_resetDataKeyframe(model, data, key)\nmujoco.mj_forward(model, data)\n\`\`\`\n\nFor URDF, apply \`previewJointPositions\` and \`previewRootPose\` from \`manifest.json\` to show the same standing pose. The root pose is world-space, with the quaternion order recorded in the manifest. URDF joint origins retain the official CAD zero reference.\n\nThree.js clothing transforms, including chest pins fitted 2 mm outside the actual garment surface and the same side/back garment-envelope clearance used in the web preview, are flattened into body-local OBJ geometry using stable anchors calibrated in the default standing pose. Web dancing and rotation offsets are not baked into the robot. \`selection\` in the manifest records independent hat, eyewear, body and legwear item IDs plus accessory IDs in three regions: chest, side and back. Each region holds at most one item; all three may be worn together. Null means removed. Format version 3 records each accessory mesh with its region and itemId. Legacy scalar accessory selections are normalized into the appropriate region. Eyewear has one rim and one lens aligned to the single camera. Legwear can be mounted to multiple native bodies, so shoes follow the actual ankle joints. The body shell and accent colors are recorded separately in \`bodyColors\`. Geometry, normals and base colors are exported; procedural fabric weave shaders and texture maps are not baked into OBJ.\n`);
   const filename = `duckrobe-${String(outfitName).replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-|-$/g, '') || 'microduck'}.zip`;
   return { files, bytes: createArchive ? zipSync(files, { level: 6 }) : null, filename, manifest };
 }

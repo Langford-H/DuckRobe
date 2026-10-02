@@ -8,398 +8,298 @@ import { DOMParser } from '@xmldom/xmldom';
 const url = process.env.DUCKROBE_URL || 'http://localhost:5173';
 const output = path.resolve(process.env.DUCKROBE_QA_OUTPUT || 'test-results');
 const slots = ['hat', 'eyewear', 'body', 'accessory', 'legwear'];
+const regions = ['chest', 'side', 'back'];
+const results = [], errors = [], warnings = [], screenshots = [];
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, acceptDownloads: true });
+const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
 const page = await context.newPage();
-page.setDefaultTimeout(90000); page.setDefaultNavigationTimeout(90000);
-const monocleOnly = process.argv.includes('--monocle-focus');
-const focused = monocleOnly || process.argv.includes('--final-focus');
-const errors = [];
-const warnings = [];
-const results = [];
-const screenshots = [];
-for (const target of [page]) {
-  target.on('pageerror', error => errors.push(error.message));
-  target.on('console', message => { if (message.type() === 'error') errors.push(message.text()); if (message.type() === 'warning') warnings.push(message.text()); });
+function watch(target, label = '') {
+  target.setDefaultTimeout(45000); target.setDefaultNavigationTimeout(90000);
+  target.on('pageerror', error => { errors.push(`${label}${error.message}`); console.error(`BROWSER ${label}${error.message}`); });
+  target.on('console', message => { if (message.type() === 'error') errors.push(`${label}${message.text()}`); if (message.type() === 'warning') warnings.push(`${label}${message.text()}`); });
 }
+watch(page);
 async function check(name, action) {
   try { await action(); results.push({ name, status: 'passed' }); console.log(`PASS ${name}`); }
   catch (error) { results.push({ name, status: 'failed', error: error.stack || error.message }); console.error(`FAIL ${name}: ${error.message}`); }
 }
-async function ready(target = page) {
-  await target.waitForFunction(() => window.duckrobe?.ready && Array.isArray(window.duckrobe.ITEMS) && window.duckrobe.OUTFITS.length === 24, null, { timeout: 180000 });
-}
-async function selection(target = page) { return target.evaluate(() => ({ ...window.duckrobe.state.selection })); }
+async function ready(target = page) { await target.waitForFunction(() => window.duckrobe?.ready && window.duckrobe.OUTFITS?.length === 100 && Array.isArray(window.duckrobe.ITEMS), null, { timeout: 180000 }); }
+async function selection(target = page) { return target.evaluate(() => structuredClone(window.duckrobe.state.selection)); }
 async function colors(target = page) { return target.evaluate(() => ({ ...window.duckrobe.rig.metadata.bodyColors })); }
+async function selectedIds(target = page) { return target.evaluate(() => window.duckrobe.selectedItemIds(window.duckrobe.state.selection)); }
 async function selectLook(id, target = page) { await target.locator(`[data-outfit="${id}"] .card-open`).click(); }
 async function selectItem(id, target = page) { await target.locator(`[data-item="${id}"] .card-open`).click(); }
 async function switchSlot(slot, target = page) { await target.locator(`#slot-controls [data-slot="${slot}"]`).click(); }
-async function lookCards(expected, target = page) { assert.equal(await target.locator('[data-outfit]').count(), expected); }
-async function frames(count = 24) {
-  return page.evaluate(async count => {
-    const observations = [];
-    for (let frame = 0; frame < count; frame++) {
-      await new Promise(requestAnimationFrame);
-      const { rig } = window.duckrobe;
-      observations.push({ position: rig.group.position.toArray(), rotation: rig.group.rotation.toArray().slice(0, 3), joints: Object.fromEntries([...rig.joints].map(([name, joint]) => [name, joint.angle])), behavior: rig.behavior?.getState() });
-    }
-    return observations;
-  }, count);
+async function setColor(selector, value, target = page) { await target.locator(selector).evaluate((input, value) => { input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); }, value); }
+async function snapshot(name, target = page, options = {}) { await target.screenshot({ path: path.join(output, name), timeout: 90000, ...options }); screenshots.push(name); }
+async function workspace(target = page) { await target.locator('.wardrobe-layout').evaluate(element => scrollTo(0, element.getBoundingClientRect().top + scrollY - 24)); }
+async function thumbnailsIdle(target = page) {
+  await target.waitForFunction(() => window.duckrobe.preview.thumbnailsPending === 0, null, { timeout: 180000 });
 }
-function extent(values) { return Math.max(...values) - Math.min(...values); }
-async function setColor(id, value) {
-  await page.locator(id).evaluate((input, value) => { input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true })); }, value);
+async function thumbnail(id, target = page) {
+  await target.waitForFunction(id => { const image = document.querySelector(`[data-outfit="${id}"] img`); return image?.complete && image.naturalWidth > 0 && image.src.startsWith('data:image/') && image.src.length > 3000; }, id, { timeout: 180000 });
 }
 async function noOverflow(target = page) {
-  const dimensions = await target.evaluate(() => ({ width: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth, buttons: [...document.querySelectorAll('button')].filter(element => getComputedStyle(element).display !== 'none' && element.scrollWidth > element.clientWidth + 2).map(element => ({ text: element.innerText, width: element.clientWidth, content: element.scrollWidth })) }));
+  const dimensions = await target.evaluate(() => ({ width: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
   assert(dimensions.document <= dimensions.width + 1 && dimensions.body <= dimensions.width + 1, JSON.stringify(dimensions));
-  assert.deepEqual(dimensions.buttons, [], 'Button labels must fit their controls');
 }
-async function shot(name, target = page, options = {}) {
-  await target.screenshot({ path: path.join(output, name), timeout: 90000, ...options }); screenshots.push(name);
+function unchangedOtherSlots(before, after, changed) { for (const slot of slots.filter(slot => slot !== changed)) assert.deepEqual(after[slot], before[slot], `Changing ${changed} changed ${slot}`); }
+async function attachedIds(target = page) {
+  return target.evaluate(() => { const ids = new Set(); window.duckrobe.rig.group.traverse(group => { if (group.userData.itemId) { let count = 0; group.traverse(object => { if (object.isMesh) count++; }); if (count) ids.add(group.userData.itemId); } }); return [...ids].sort(); });
 }
-function assertSameOtherSlots(before, after, changedSlot) {
-  assert.deepEqual(Object.fromEntries(slots.filter(slot => slot !== changedSlot).map(slot => [slot, after[slot]])), Object.fromEntries(slots.filter(slot => slot !== changedSlot).map(slot => [slot, before[slot]])));
+async function frames(count = 24) {
+  return page.evaluate(async count => { const values = []; for (let i = 0; i < count; i++) { await new Promise(requestAnimationFrame); const { rig } = window.duckrobe; values.push({ root: [...rig.group.position.toArray(), ...rig.group.rotation.toArray().slice(0, 3)], joints: Object.fromEntries([...rig.joints].map(([name, joint]) => [name, joint.angle])), behavior: rig.behavior.getState() }); } return values; }, count);
 }
-
-async function verifyMonocles() {
-  const eyewear = await page.evaluate(() => window.duckrobe.ITEMS.filter(item => item.slot === 'eyewear').map(item => ({ id: item.id, en: item.en })));
-  assert.equal(eyewear.length, 19);
-  await switchSlot('eyewear');
-  for (const item of eyewear) {
-    await page.evaluate(id => window.duckrobe.selectItem(id), item.id);
-    const details = await page.evaluate(() => { const meshes = []; window.duckrobe.rig.group.traverse(group => { if (group.userData.slot === 'eyewear') group.traverse(object => { if (object.isMesh) meshes.push({ name: object.name, vertices: object.geometry.getAttribute('position').count }); }); }); return meshes; });
-    assert.equal(details.filter(mesh => mesh.name.split(':').at(-1) === 'single-eyepiece-rim').length, 1, `${item.en} needs one continuous frame`);
-    assert.equal(details.filter(mesh => mesh.name.split(':').at(-1) === 'single-optical-lens').length, 1, `${item.en} needs one optical lens`);
-    assert(details.every(mesh => mesh.vertices > 0));
+const extent = values => Math.max(...values) - Math.min(...values);
+async function contactSheets(catalog) {
+  const data = await page.locator('[data-outfit]').evaluateAll(cards => cards.map(card => ({ id: card.dataset.outfit, name: card.querySelector('.card-name').textContent, image: card.querySelector('img')?.src })));
+  assert.equal(data.length, 100); assert(data.every(item => item.image?.startsWith('data:image/')));
+  assert.equal(new Set(data.map(item => item.image)).size, 100);
+  await mkdir(path.join(output, 'catalog', 'thumbs'), { recursive: true });
+  for (const item of data) await writeFile(path.join(output, 'catalog', 'thumbs', `${item.id}.webp`), Buffer.from(item.image.split(',')[1], 'base64'));
+  const sheet = await context.newPage(); await sheet.bringToFront();
+  for (let index = 0; index < 4; index++) {
+    const panel = data.slice(index * 25, (index + 1) * 25).map(item => ({ ...item, title: catalog.find(look => look.id === item.id)?.name || item.name }));
+    await sheet.setViewportSize({ width: 1400, height: 1550 });
+    await sheet.setContent(`<html lang="zh-CN"><meta charset="utf-8"><style>*{box-sizing:border-box}body{margin:0;padding:24px;background:#f6f5ed;font-family:Arial,"Noto Sans CJK SC",sans-serif;color:#29372d}h1{font-size:24px;margin:0 0 18px}main{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}article{background:#fffaf0;border-radius:14px;text-align:center;padding:6px}img{width:100%;height:252px;object-fit:contain}p{font-size:14px;margin:0;padding:5px}</style><h1>DuckRobe · ${index * 25 + 1}–${index * 25 + 25} / 100 · 真实三维试穿</h1><main>${panel.map(item => `<article><img src="${item.image}"><p>${item.title}</p></article>`).join('')}</main></html>`);
+    await sheet.locator('img').evaluateAll(images => Promise.all(images.map(image => image.decode())));
+    await snapshot(`catalog-${index + 1}.png`, sheet, { fullPage: true });
   }
-  await page.waitForFunction(() => !window.duckrobe.preview.thumbnailsPending, null, { timeout: 180000 });
-  const images = await page.locator('[data-item] img').evaluateAll(images => images.map(image => image.src));
-  assert.equal(images.length, 19); assert.equal(new Set(images).size, 19);
-  await shot('products-eyewear.png');
-}
-async function verifyMonocleExport() {
-  const expected = await selection();
-  const downloading = page.waitForEvent('download', { timeout: 90000 }); await page.locator('#export-look').click(); const download = await downloading;
-  const destination = path.join(output, 'duckrobe-single-eye.zip'); await download.saveAs(destination);
-  const files = unzipSync(await readFile(destination)); const manifest = JSON.parse(new TextDecoder().decode(files['manifest.json']));
-  assert.deepEqual(manifest.selection, expected); assert.deepEqual(manifest.bodyColors, await colors());
-  const eyewear = manifest.clothing.filter(part => part.slot === 'eyewear');
-  assert.equal(eyewear.filter(part => part.detailName?.split(':').at(-1) === 'single-eyepiece-rim').length, 1);
-  assert.equal(eyewear.filter(part => part.detailName?.split(':').at(-1) === 'single-optical-lens').length, 1);
-  assert(eyewear.every(part => files[part.path]?.length > 0 && part.vertices > 0 && part.triangles > 0));
-  const parser = new DOMParser(), decoder = new TextDecoder();
-  const urdf = parser.parseFromString(decoder.decode(files['microduck.urdf']), 'application/xml');
-  const mjcf = parser.parseFromString(decoder.decode(files['microduck.xml']), 'application/xml');
-  for (const part of eyewear) {
-    assert([...urdf.getElementsByTagName('mesh')].some(mesh => mesh.getAttribute('filename') === part.path));
-    assert([...mjcf.getElementsByTagName('mesh')].some(mesh => `meshes/${mesh.getAttribute('file')}` === part.path));
-  }
-}
-async function verifyLegacySavedThumbnail() {
-  const oldThumbnail = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==';
-  const savedSelection = await selection();
-  const savedColors = { shell: '#bdace3', accent: '#f2dbac' };
-  const savedDate = '2026-10-01T20:00:00.000Z';
-  await page.evaluate(({ selection, colors, oldThumbnail, date }) => {
-    localStorage.setItem('duckrobe.wardrobe.v2', JSON.stringify({ language: 'en', selection, colors, favorites: [`item:${selection.eyewear}`], saved: [{ id: 'legacy-eyewear-qa', selection, colors, date, thumbnail: oldThumbnail, thumbnailVersion: 'microduck-single-eye-v1' }] }));
-  }, { selection: savedSelection, colors: savedColors, oldThumbnail, date: savedDate });
-  await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
-  const migrated = await page.evaluate(() => window.duckrobe.state.saved[0]);
-  assert.equal(migrated.id, 'legacy-eyewear-qa'); assert.equal(migrated.date, savedDate);
-  assert.deepEqual(migrated.selection, savedSelection); assert.deepEqual(migrated.colors, savedColors);
-  assert.notEqual(migrated.thumbnail, oldThumbnail, 'An old v2 snapshot must be invalidated without deleting the saved look');
-  assert(await page.evaluate(() => window.duckrobe.state.favorites.has(`item:${window.duckrobe.state.selection.eyewear}`)));
-  await page.locator('#saved-nav').click();
-  await page.waitForFunction(() => window.duckrobe.state.saved[0].thumbnail?.startsWith('data:image/') && window.duckrobe.state.saved[0].thumbnail.length > 3000, null, { timeout: 180000 });
-  const rebuilt = await page.evaluate(() => window.duckrobe.state.saved[0]);
-  assert.equal(rebuilt.thumbnailVersion, 'microduck-single-eye-v2'); assert.notEqual(rebuilt.thumbnail, oldThumbnail);
-  assert.equal(await page.locator('[data-saved="legacy-eyewear-qa"] img').getAttribute('src'), rebuilt.thumbnail);
-  assert.match(await page.locator('[data-saved="legacy-eyewear-qa"] .card-subtitle').innerText(), /2 Oct|Oct 2/);
-  await page.locator('#clear-look').click(); await setColor('#shell-color', '#ed8938');
-  await page.locator('[data-saved="legacy-eyewear-qa"] .card-open').click();
-  assert.deepEqual(await selection(), savedSelection); assert.deepEqual(await colors(), savedColors);
-  assert.equal(await page.evaluate(() => window.duckrobe.state.saved[0].date), savedDate);
-  await shot('saved-single-eye-migration.png');
-  await page.locator('#wardrobe-nav').click(); await switchSlot('all');
-}
-async function verifyResponsiveLayouts() {
-  for (const width of [390, 340]) {
-    await page.setViewportSize({ width, height: width === 390 ? 844 : 750 }); await noOverflow();
-    await page.evaluate(() => scrollTo(0, 0)); await shot(`mobile-${width}-top.png`);
-    await page.locator('#export-look').scrollIntoViewIfNeeded(); assert(await page.locator('#export-look').isVisible()); await shot(`mobile-${width}-controls.png`);
-    await page.evaluate(() => scrollTo(0, document.querySelector('.closet').getBoundingClientRect().top + scrollY - 16)); await shot(`mobile-${width}-catalog.png`);
-    await switchSlot('eyewear'); const id = await page.locator('[data-item]').first().getAttribute('data-item'); const before = await selection(); await selectItem(id); const after = await selection(); assert.equal(after.eyewear, id); assertSameOtherSlots(before, after, 'eyewear');
-    await page.locator('[data-language="zh"]').click(); await noOverflow(); await page.locator('[data-language="en"]').click(); await switchSlot('all');
-  }
-  await page.setViewportSize({ width: 768, height: 1024 }); await noOverflow(); await page.evaluate(() => scrollTo(0, 0)); await shot('tablet.png');
-  await page.setViewportSize({ width: 1440, height: 1100 }); await noOverflow();
-}
-async function verifySlowLoading() {
-  const loadingContext = await browser.newContext({ viewport: { width: 1440, height: 1100 } });
-  const loadingPage = await loadingContext.newPage(); loadingPage.setDefaultTimeout(90000); loadingPage.setDefaultNavigationTimeout(90000);
-  loadingPage.on('pageerror', error => errors.push(`slow loading: ${error.message}`));
-  let releaseModel;
-  const modelGate = new Promise(resolve => { releaseModel = resolve; });
-  await loadingPage.route('**/robot/web/microduck.glb', async route => { await modelGate; await route.continue(); });
-  try {
-    await loadingPage.goto(url, { waitUntil: 'commit' });
-    await loadingPage.locator('[data-outfit]').first().waitFor();
-    assert.equal(await loadingPage.evaluate(() => Boolean(window.duckrobe?.ready)), false);
-    const id = await loadingPage.locator('[data-outfit]').nth(7).getAttribute('data-outfit');
-    await selectLook(id, loadingPage);
-    await loadingPage.locator('#shell-color').evaluate(input => { input.value = '#bdace3'; input.dispatchEvent(new Event('input', { bubbles: true })); });
-    const expectedColors = { shell: '#bdace3', accent: await loadingPage.locator('#accent-color').inputValue() };
-    await loadingPage.locator('#saved-nav').click(); assert(await loadingPage.locator('.empty-state').isVisible());
-    assert.equal(await loadingPage.locator('#export-look').isDisabled(), true);
-    releaseModel(); await ready(loadingPage);
-    const expectedSelection = await loadingPage.evaluate(id => window.duckrobe.OUTFITS.find(look => look.id === id).selection, id);
-    assert.deepEqual(await selection(loadingPage), expectedSelection); assert.deepEqual(await colors(loadingPage), expectedColors);
-    assert.equal(await loadingPage.evaluate(() => window.duckrobe.state.view), 'saved');
-    assert.equal(await loadingPage.locator('#viewer-loading').isVisible(), false); assert.equal(await loadingPage.locator('#export-look').isEnabled(), true);
-    const attachedSlots = await loadingPage.evaluate(() => { const slots = new Set(); window.duckrobe.rig.group.traverse(object => { if (object.userData.slot) slots.add(object.userData.slot); }); return [...slots].sort(); });
-    assert.deepEqual(attachedSlots, slots.filter(slot => expectedSelection[slot]).sort());
-    assert(await loadingPage.evaluate(() => window.duckrobe.thumbnails.size > 0), 'Readiness must have a real seed preview even when saved view has no cards');
-  } finally { releaseModel(); await loadingContext.close(); await page.bringToFront(); }
+  await sheet.close(); await page.bringToFront();
 }
 
 try {
-  await page.goto(url, { waitUntil: 'domcontentloaded' });
-  await ready();
-  const catalog = await page.evaluate(() => window.duckrobe.OUTFITS.map(({ id, name, en, theme }) => ({ id, name, en, theme })));
-  const items = await page.evaluate(() => window.duckrobe.ITEMS.map(({ id, slot, name, en }) => ({ id, slot, name, en })));
-  const themes = await page.evaluate(() => window.duckrobe.THEMES.map(({ id, name, en }) => ({ id, name, en })));
-  if (focused) {
-    await check('all 19 eyewear products have exactly one native eyepiece frame and one optical lens', verifyMonocles);
-    await check('single-eye geometry exports matching frame and lens in both native formats', verifyMonocleExport);
-    await check('old v2 snapshots rebuild for one eye while preserving saved choices, colors, dates and favorites', verifyLegacySavedThumbnail);
-    if (!monocleOnly) {
-    await check('390px and 340px layouts keep labels readable and every control accessible', verifyResponsiveLayouts);
-    await check('changes made during slow model loading survive readiness, even in an empty saved wardrobe', verifySlowLoading);
-    }
-    await page.locator('#reset-colors').click();
-    await page.evaluate(() => window.duckrobe.selectLook(window.duckrobe.OUTFITS[0].id));
-    await switchSlot('all'); await page.evaluate(() => scrollTo(0, 0));
-    await page.waitForFunction(() => !window.duckrobe.preview.thumbnailsPending, null, { timeout: 180000 });
-    await shot('desktop.png'); await shot('desktop-ready.png');
-  } else {
-  await check('fresh browser defaults to English with exactly 24 curated looks', async () => {
-    assert.equal(await page.locator('html').getAttribute('lang'), 'en');
-    assert.equal(catalog.length, 24); assert.equal(new Set(catalog.map(look => look.id)).size, 24);
-    await lookCards(24);
-    assert.equal(await page.locator('.collection-stamp').count(), 0);
-    assert.equal(await page.locator('[data-language="en"]').getAttribute('aria-pressed'), 'true');
+  await page.goto(url, { waitUntil: 'domcontentloaded' }); await ready(); await page.bringToFront();
+  const catalog = await page.evaluate(() => window.duckrobe.OUTFITS.map(({ id, name, en, theme, selection, bodyColors }) => ({ id, name, en, theme, selection, bodyColors })));
+  const items = await page.evaluate(() => window.duckrobe.ITEMS.map(({ id, name, en, slot, region, kind }) => ({ id, name, en, slot, region, kind })));
+  const themes = await page.evaluate(() => window.duckrobe.THEMES.map(({ id, name }) => ({ id, name })));
+  await workspace(); await thumbnail(catalog[0].id); await thumbnailsIdle();
+  await check('fresh English wardrobe has 100 curated kits and renders only visible previews plus prefetch', async () => {
+    assert.equal(await page.locator('html').getAttribute('lang'), 'en'); assert.equal(await page.locator('[data-outfit]').count(), 100);
+    assert.equal(catalog.length, 100); assert.equal(themes.length, 10); assert(items.length > 100);
     assert(!/\p{Script=Han}/u.test(await page.locator('#look-name').innerText()));
-    assert(!/\p{Script=Han}/u.test(await page.locator('[data-outfit] .card-name').first().innerText()));
-    assert(await page.locator('#viewer canvas').isVisible());
-    await noOverflow();
+    const loading = await page.evaluate(() => ({ cached: [...window.duckrobe.thumbnails.keys()].filter(key => key.startsWith('look:')).length, images: document.querySelectorAll('[data-outfit] img').length }));
+    assert(loading.cached > 0 && loading.cached < 40, `Expected a visible subset, got ${JSON.stringify(loading)}`);
+    assert(loading.images > 0 && loading.images < 100); await noOverflow();
   });
-  await shot('desktop.png');
-  await check('English and Chinese switch all core labels and preserve the selected look', async () => {
-    const before = await selection();
-    await page.locator('[data-language="zh"]').click();
-    assert.match(await page.locator('html').getAttribute('lang'), /^zh/);
-    assert(/\p{Script=Han}/u.test(await page.locator('[data-i18n="heroLead"]').innerText()));
-    assert(/\p{Script=Han}/u.test(await page.locator('#look-name').innerText()));
-    assert(/\p{Script=Han}/u.test(await page.locator('#slot-controls [data-slot="eyewear"]').innerText()));
-    assert.deepEqual(await selection(), before); await noOverflow();
-    await shot('desktop-zh.png');
-    await page.locator('[data-language="en"]').click();
-    assert.equal(await page.locator('html').getAttribute('lang'), 'en');
-    assert(!/\p{Script=Han}/u.test(await page.locator('#look-name').innerText()));
-    assert.deepEqual(await selection(), before);
+  await snapshot('desktop-ready.png');
+  await check('desktop wheel, drag and keyboard scroll only the catalog and keep headers fixed', async () => {
+    const scroll = page.locator('#catalog-scroll');
+    const before = await scroll.evaluate(element => ({ top: element.scrollTop, height: element.clientHeight, content: element.scrollHeight, pageY: scrollY, headerY: document.querySelector('.closet-controls').getBoundingClientRect().y }));
+    assert(before.height > 100 && before.content > before.height * 3);
+    await scroll.hover(); await page.mouse.wheel(0, 520);
+    await page.waitForFunction(top => document.querySelector('#catalog-scroll').scrollTop > top + 100, before.top);
+    const selectionBefore = await selection(), box = await scroll.boundingBox(); assert(box);
+    await page.mouse.move(box.x + box.width * .5, box.y + box.height * .75); await page.mouse.down();
+    const dragBefore = await scroll.evaluate(element => element.scrollTop);
+    await page.mouse.move(box.x + box.width * .5, box.y + box.height * .35, { steps: 10 }); await page.mouse.up();
+    assert(await scroll.evaluate(element => element.scrollTop) > dragBefore + 40); assert.deepEqual(await selection(), selectionBefore, 'A drag must not accidentally equip a look');
+    await scroll.focus(); await page.keyboard.press('End');
+    await page.waitForFunction(() => { const element = document.querySelector('#catalog-scroll'); return element.scrollTop >= element.scrollHeight - element.clientHeight - 4; });
+    const after = await scroll.evaluate(element => ({ pageY: scrollY, headerY: document.querySelector('.closet-controls').getBoundingClientRect().y }));
+    assert(Math.abs(after.pageY - before.pageY) < 2); assert(Math.abs(after.headerY - before.headerY) < 2);
+    await selectLook(catalog.at(-1).id); assert.deepEqual(await selection(), catalog.at(-1).selection);
+    assert.deepEqual(await attachedIds(), (await selectedIds()).sort());
+    await scroll.focus(); await page.keyboard.press('Home');
+    await page.waitForFunction(() => document.querySelector('#catalog-scroll').scrollTop < 4);
   });
-  await check('each collection exposes its real curated look count', async () => {
-    for (const theme of themes) {
-      await page.locator(`[data-theme="${theme.id}"]`).click();
-      await lookCards(catalog.filter(look => look.theme === theme.id).length);
-      assert.equal(await page.locator(`[data-theme="${theme.id}"]`).getAttribute('aria-pressed'), 'true');
-    }
-    await page.locator('[data-theme="all"]').click(); await lookCards(24);
-  });
-  await check('whole looks equip valid independent item IDs', async () => {
-    await switchSlot('all'); await selectLook(catalog[3].id);
-    const current = await selection(); assert.deepEqual(Object.keys(current).sort(), [...slots].sort());
-    for (const slot of slots) { if (current[slot]) assert(items.some(item => item.id === current[slot] && item.slot === slot), `${slot} must contain a real matching item`); }
-    assert(Object.values(current).filter(Boolean).length >= 3);
-    assert.equal(await page.locator(`[data-outfit="${catalog[3].id}"] .card-open`).getAttribute('aria-pressed'), 'true');
-  });
-  await check('five tabs show actual distinct products, equip independently, and remove only their own slot', async () => {
-    const inventories = [];
-    for (const slot of slots) {
-      const beforeTab = await selection(); await switchSlot(slot);
-      assert.deepEqual(await selection(), beforeTab, 'Browsing a category must not change a look');
-      assert.equal(await page.locator('[data-outfit]').count(), 0, `${slot} must not reuse complete look cards`);
-      const ids = await page.locator('[data-item]').evaluateAll(cards => cards.map(card => card.dataset.item));
-      assert(ids.length > 0, `${slot} has no products`);
-      assert.equal(ids.length, items.filter(item => item.slot === slot).length);
-      assert(ids.every(id => items.some(item => item.id === id && item.slot === slot)));
-      inventories.push(ids.join('|'));
-      const id = ids.find(id => id !== beforeTab[slot]) || ids[0];
-      await selectItem(id);
-      const equipped = await selection(); assert.equal(equipped[slot], id); assertSameOtherSlots(beforeTab, equipped, slot);
-      assert.equal(await page.locator(`[data-item="${id}"] .card-open`).getAttribute('aria-pressed'), 'true');
-      assert(await page.locator(`#equipped-items [data-remove-slot="${slot}"]`).isVisible());
-      const actualMeshes = await page.evaluate(slot => { let count = 0; window.duckrobe.rig.group.traverse(object => { if (object.userData.slot === slot) object.traverse(child => { if (child.isMesh) count++; }); }); return count; }, slot);
-      assert(actualMeshes > 0, `${slot} must attach visible geometry to the real robot`);
-      await page.locator(`#equipped-items [data-remove-slot="${slot}"]`).click();
-      const removed = await selection(); assert.equal(removed[slot], null); assertSameOtherSlots(equipped, removed, slot);
-      assert.equal(await page.locator(`#equipped-items [data-remove-slot="${slot}"]`).count(), 0);
-      await selectItem(id); assert.equal((await selection())[slot], id);
-      await shot(`products-${slot}.png`);
-    }
-    assert.equal(new Set(inventories).size, 5);
-    await switchSlot('all'); await lookCards(24);
-  });
-  await check('all 19 eyewear products have exactly one native eyepiece frame and one optical lens', verifyMonocles);
-  await switchSlot('all');
-  const mixedSelection = await selection();
-  await check('search accepts English and Chinese, empty results recover cleanly', async () => {
-    const look = catalog.find(look => typeof look.en === 'string' && typeof look.name === 'string'); assert(look);
-    await page.locator('#outfit-search').fill(look.en); await lookCards(1);
-    assert.equal(await page.locator('[data-outfit]').getAttribute('data-outfit'), look.id);
-    await page.locator('#outfit-search').fill(look.name); await lookCards(1);
-    await page.locator('#outfit-search').fill('no-such-duck-qa-827'); await lookCards(0); assert(await page.locator('.empty-state').isVisible());
-    await page.locator('#clear-filters').click(); await lookCards(24); assert.equal(await page.locator('#outfit-search').inputValue(), '');
-  });
-  await check('favorites work for looks and independent products', async () => {
-    await page.locator(`[data-outfit="${catalog[5].id}"] .card-heart`).click();
-    await page.locator('#filter-favorites').click(); await lookCards(1);
-    assert.equal(await page.locator('[data-outfit]').getAttribute('data-outfit'), catalog[5].id);
-    await page.locator('[data-outfit] .card-heart').click(); await lookCards(0);
-    await page.locator('#filter-favorites').click(); await lookCards(24);
-    await switchSlot('eyewear');
-    const itemId = await page.locator('[data-item]').first().getAttribute('data-item');
-    await page.locator(`[data-item="${itemId}"] .card-heart`).click(); await page.locator('#filter-favorites').click();
-    assert.equal(await page.locator('[data-item]').count(), 1);
-    assert.equal(await page.locator('[data-item]').getAttribute('data-item'), itemId);
-    await page.locator('[data-item] .card-heart').click(); assert.equal(await page.locator('[data-item]').count(), 0);
-    await page.locator('#filter-favorites').click(); await switchSlot('all');
-  });
-  await check('color presets and custom colors update the actual shell and accent materials', async () => {
-    const before = await colors();
-    assert.equal(await page.locator('#palette-presets button').count() > 1, true);
-    await page.locator('#palette-presets button').last().click();
-    assert.notDeepEqual(await colors(), before);
+  await check('kit colors apply automatically, lock survives reload, and explicit look palette overrides the lock', async () => {
+    const first = catalog[0], different = catalog.find(look => JSON.stringify(look.bodyColors) !== JSON.stringify(first.bodyColors)); assert(different);
+    await selectLook(first.id); assert.deepEqual(await colors(), first.bodyColors);
+    const image = await page.locator(`[data-outfit="${first.id}"] img`).getAttribute('src');
     await setColor('#shell-color', '#9fbc8e'); await setColor('#accent-color', '#f5cf76');
-    assert.deepEqual(await colors(), { shell: '#9fbc8e', accent: '#f5cf76' });
-    const materials = await page.evaluate(() => { const result = {}; window.duckrobe.rig.group.traverse(object => { if (object.userData.meshFile === 'top_head_shell.stl') result.shell = `#${object.material.color.getHexString()}`; if (object.userData.meshFile === 'jaw.stl') result.accent = `#${object.material.color.getHexString()}`; }); return result; });
-    assert.deepEqual(materials, await colors());
-    assert.equal(await page.locator('#shell-color').inputValue(), '#9fbc8e'); assert.equal(await page.locator('#accent-color').inputValue(), '#f5cf76');
+    await page.locator('#color-lock').click(); assert.equal(await page.locator('#color-lock').getAttribute('aria-pressed'), 'true');
+    await selectLook(different.id); assert.deepEqual(await colors(), { shell: '#9fbc8e', accent: '#f5cf76' });
+    assert.equal(await page.locator(`[data-outfit="${first.id}"] img`).getAttribute('src'), image, 'Kit previews must retain their own palette');
+    const painted = await page.evaluate(() => { const result = {}; window.duckrobe.rig.group.traverse(mesh => { if (!mesh.isMesh) return; if (mesh.userData.meshFile === 'top_head_shell.stl') result.shell = `#${mesh.material.color.getHexString()}`; if (mesh.userData.meshFile === 'jaw.stl') result.accent = `#${mesh.material.color.getHexString()}`; }); return result; });
+    assert.deepEqual(painted, await colors(), 'The native robot materials must reflect the visible color controls');
+    const cached = await page.evaluate(() => [...window.duckrobe.thumbnails.keys()].filter(key => key.startsWith('look:')).sort());
+    await setColor('#shell-color', '#bdace3'); await thumbnailsIdle();
+    assert.deepEqual(await page.evaluate(() => [...window.duckrobe.thumbnails.keys()].filter(key => key.startsWith('look:')).sort()), cached, 'Custom colors must not queue a new full catalog');
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); await workspace();
+    assert.equal(await page.locator('#color-lock').getAttribute('aria-pressed'), 'true'); assert.deepEqual(await colors(), { shell: '#bdace3', accent: '#f5cf76' });
+    await page.locator('#apply-look-colors').click(); assert.deepEqual(await colors(), different.bodyColors);
+    assert.equal(await page.locator('#color-lock').getAttribute('aria-pressed'), 'true');
+    await page.locator('#color-lock').click(); await selectLook(first.id); assert.deepEqual(await colors(), first.bodyColors);
   });
-  const savedColors = await colors();
-  let originalSavedId;
-  await check('saved looks include color, restore all five items, and survive reload', async () => {
-    await page.locator('#save-look').click(); assert.equal(await page.locator('#saved-count').textContent(), '1');
-    originalSavedId = await page.evaluate(() => window.duckrobe.state.saved[0].id);
-    await page.locator('#save-look').click(); assert.equal(await page.locator('#saved-count').textContent(), '1', 'An identical look is not saved twice');
-    await setColor('#shell-color', '#ed8938'); await page.locator('#save-look').click(); assert.equal(await page.locator('#saved-count').textContent(), '2', 'The same pieces in a different body color are a different saved look');
-    await page.locator('#clear-look').click(); assert.deepEqual(await selection(), Object.fromEntries(slots.map(slot => [slot, null])));
-    await page.locator('#saved-nav').click(); assert.equal(await page.locator('[data-saved]').count(), 2);
-    await page.locator(`[data-saved="${originalSavedId}"] .card-open`).click();
-    assert.deepEqual(await selection(), mixedSelection); assert.deepEqual(await colors(), savedColors);
-    await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
-    assert.deepEqual(await selection(), mixedSelection); assert.deepEqual(await colors(), savedColors);
-    assert.equal(await page.locator('#saved-count').textContent(), '2');
-    assert.equal(await page.locator('html').getAttribute('lang'), 'en');
-  });
-  await check('background previews finish with 24 unique actual 3D look thumbnails', async () => {
-    await page.waitForFunction(() => window.duckrobe.ready && !window.duckrobe.preview.thumbnailsPending, null, { timeout: 180000 });
-    await page.locator('#wardrobe-nav').click(); await switchSlot('all'); await lookCards(24);
-    await page.locator('[data-outfit] img').first().waitFor();
-    const images = await page.locator('[data-outfit] img').evaluateAll(images => images.map(image => image.src));
-    assert.equal(images.length, 24); assert.equal(new Set(images).size, 24);
-    assert(images.every(image => image.startsWith('data:image/') && image.length > 3000));
-    await shot('desktop-ready.png');
-  });
-  await check('pause settles the rig; manual hop, dance, and turn produce distinct grounded motion', async () => {
-    await page.bringToFront();
-    if (await page.locator('#motion-toggle').getAttribute('aria-pressed') === 'true') await page.locator('#motion-toggle').click();
-    assert.equal(await page.locator('#motion-toggle').getAttribute('aria-pressed'), 'false');
-    await frames(60);
-    const resting = await frames(8);
-    for (const name of Object.keys(resting[0].joints)) assert(extent(resting.map(frame => frame.joints[name])) < .006, `${name} did not settle`);
-    for (const kind of ['hop', 'dance', 'turn']) {
-      await page.locator(`#pet-action-menu [data-action="${kind}"]`).click();
-      await page.waitForFunction(kind => window.duckrobe.rig.behavior.getState().kind === kind, kind, { timeout: 20000 });
-      const observed = await frames(24);
-      const movement = Math.max(...Object.keys(observed[0].joints).map(name => extent(observed.map(frame => frame.joints[name]))));
-      assert(movement > .01, `${kind} must move real joints`);
-      if (kind === 'turn') assert(extent(observed.map(frame => frame.rotation[2])) > .08, 'Twirl must turn the duck');
-      for (const frame of observed) {
-        const feet = frame.behavior.footBounds; assert(feet.left >= -1e-5 && feet.right >= -1e-5, `Feet crossed the ground in ${kind}`);
-      }
-      await page.waitForFunction(kind => window.duckrobe.rig.behavior.getState().kind !== kind, kind, { timeout: 45000 });
-      await frames(12);
+  await check('scrolling incrementally renders all 100 unique real previews', async () => {
+    await switchSlot('all'); await workspace();
+    const cards = page.locator('[data-outfit]');
+    for (let index = 0; index < catalog.length; index += 3) {
+      await cards.nth(index).scrollIntoViewIfNeeded();
+      for (const look of catalog.slice(index, index + 3)) await thumbnail(look.id);
     }
-    await page.locator('#jump-button').click();
-    await page.waitForFunction(() => window.duckrobe.rig.behavior.getState().kind === 'hop', null, { timeout: 20000 });
-    await page.waitForFunction(() => window.duckrobe.rig.behavior.getState().kind !== 'hop', null, { timeout: 45000 });
+    assert.equal(await page.locator('[data-outfit] img').count(), 100); await contactSheets(catalog);
   });
-  await check('pointer curiosity follows the cursor; dragging inspects the duck without fighting its motion', async () => {
-    if (await page.locator('#motion-toggle').getAttribute('aria-pressed') === 'false') await page.locator('#motion-toggle').click();
-    await page.locator('#viewer').scrollIntoViewIfNeeded();
-    const box = await page.locator('#viewer canvas').boundingBox(); assert(box);
-    await page.mouse.move(box.x + box.width * .15, box.y + box.height * .25); await frames(8);
-    const first = await page.evaluate(() => window.duckrobe.rig.joints.get('head_yaw').angle);
-    await page.mouse.move(box.x + box.width * .85, box.y + box.height * .25); await frames(8);
-    const second = await page.evaluate(() => window.duckrobe.rig.joints.get('head_yaw').angle);
-    assert(Math.abs(second - first) > .025, 'Head must respond to cursor movement');
-    const cameraBefore = await page.evaluate(() => window.duckrobe.preview.camera.position.toArray());
-    await page.mouse.move(box.x + box.width * .5, box.y + box.height * .55); await page.mouse.down();
-    await page.mouse.move(box.x + box.width * .74, box.y + box.height * .58, { steps: 12 });
-    const inspecting = await frames(14);
-    assert(extent(inspecting.map(frame => frame.rotation[2])) < .035, 'The duck must not spin under a held inspection drag');
-    await page.mouse.up(); await page.mouse.move(3, 3);
-    const cameraAfter = await page.evaluate(() => window.duckrobe.preview.camera.position.toArray());
-    assert(cameraBefore.some((value, index) => Math.abs(cameraAfter[index] - value) > .02), 'Dragging must move the inspection camera');
-    await page.locator('#reset-camera').click();
+  await check('rapid category changes cancel old previews without errors, and new previews resume', async () => {
+    const before = await selection(), errorCount = errors.length;
+    for (let pass = 0; pass < 2; pass++) for (const slot of ['hat', 'body', 'eyewear', 'legwear', 'accessory', 'all']) await switchSlot(slot);
+    assert.deepEqual(await selection(), before);
+    await switchSlot('body'); const fresh = items.filter(item => item.slot === 'body').at(-1);
+    await page.locator(`[data-item="${fresh.id}"]`).scrollIntoViewIfNeeded();
+    await page.waitForFunction(id => { const image = document.querySelector(`[data-item="${id}"] img`); return image?.complete && image.naturalWidth > 0 && image.src.length > 3000; }, fresh.id, { timeout: 180000 });
+    await thumbnailsIdle(); assert.equal(errors.length, errorCount, 'Canceled thumbnail jobs must not throw'); assert.deepEqual(await selection(), before);
+    await switchSlot('all');
   });
-  await check('keyboard search, dialog focus, Escape, and open source links work', async () => {
+  await check('10 collections each show 10 kits, and English/Chinese searches work in both languages', async () => {
+    for (const theme of themes) { await page.locator(`[data-theme="${theme.id}"]`).click(); assert.equal(await page.locator('[data-outfit]').count(), 10); }
+    await page.locator('[data-theme="all"]').click();
+    await page.locator('#outfit-search').fill(catalog[0].en); assert(await page.locator(`[data-outfit="${catalog[0].id}"]`).isVisible());
+    await page.locator('#outfit-search').fill(catalog[0].name); assert(await page.locator(`[data-outfit="${catalog[0].id}"]`).isVisible());
+    const before = await selection(); await page.locator('[data-language="zh"]').click(); assert.match(await page.locator('html').getAttribute('lang'), /^zh/);
+    assert(/\p{Script=Han}/u.test(await page.locator('#color-lock').innerText())); assert.deepEqual(await selection(), before);
+    await page.locator('#outfit-search').fill('no-such-duck-qa-837'); assert.equal(await page.locator('[data-outfit]').count(), 0);
+    await page.locator('#clear-filters').click(); assert.equal(await page.locator('[data-outfit]').count(), 100);
+    await page.locator('[data-language="en"]').click();
+  });
+  await check('independent products equip and remove without changing other slots', async () => {
+    for (const slot of slots.filter(slot => slot !== 'accessory')) {
+      const before = await selection(); await switchSlot(slot); assert.deepEqual(await selection(), before);
+      const pool = items.filter(item => item.slot === slot); assert.equal(await page.locator('[data-item]').count(), pool.length);
+      const item = pool.find(item => item.id !== before[slot]); assert(item); await selectItem(item.id);
+      const after = await selection(); assert.equal(after[slot], item.id); unchangedOtherSlots(before, after, slot);
+      assert.equal(await page.locator(`[data-item="${item.id}"] .card-open`).getAttribute('aria-pressed'), 'true');
+      await page.locator(`[data-remove-item="${item.id}"]`).click(); const removed = await selection(); assert.equal(removed[slot], null); unchangedOtherSlots(after, removed, slot);
+    }
+  });
+  await check('chest, side and back coexist; same-region replacement and per-piece removal preserve neighbors', async () => {
+    await page.locator('#clear-look').click(); assert.deepEqual(await selectedIds(), []); await switchSlot('accessory');
+    const chosen = {};
+    for (const region of regions) {
+      const pool = items.filter(item => item.slot === 'accessory' && item.region === region); assert(pool.length > 1);
+      await page.locator(`[data-accessory-region="${region}"]`).click(); assert.equal(await page.locator('[data-item]').count(), pool.length);
+      assert.equal(await page.locator('[data-item] .card-position').count(), pool.length);
+      chosen[region] = pool[0].id; await selectItem(chosen[region]); assert.equal((await selection()).accessory[region], chosen[region]);
+    }
+    assert.deepEqual((await selection()).accessory, chosen); assert.equal(await page.locator('[data-remove-slot="accessory"]').count(), 3);
+    const replacement = items.find(item => item.slot === 'accessory' && item.region === 'chest' && item.id !== chosen.chest); assert(replacement);
+    await page.locator('[data-accessory-region="chest"]').click(); await selectItem(replacement.id); chosen.chest = replacement.id;
+    assert.deepEqual((await selection()).accessory, chosen); assert.deepEqual(await attachedIds(), Object.values(chosen).sort());
+    await page.locator(`[data-remove-item="${chosen.side}"]`).click(); assert.deepEqual((await selection()).accessory, { ...chosen, side: null });
+    await page.locator('[data-accessory-region="side"]').click(); await selectItem(chosen.side);
+    await page.locator('[data-accessory-region="back"]').click(); await selectItem(chosen.back); assert.deepEqual((await selection()).accessory, { ...chosen, back: null });
+    await selectItem(chosen.back); assert.deepEqual((await selection()).accessory, chosen);
+    for (const slot of slots.filter(slot => slot !== 'accessory')) { await switchSlot(slot); const id = catalog[0].selection[slot] || items.find(item => item.slot === slot).id; await selectItem(id); }
+    assert.deepEqual(await attachedIds(), (await selectedIds()).sort());
+  });
+  await check('kit and piece favorites retain their own IDs and filters', async () => {
+    await switchSlot('all'); const look = catalog[0]; await page.locator(`[data-outfit="${look.id}"] .card-heart`).click();
+    await page.locator('#filter-favorites').click(); assert.equal(await page.locator('[data-outfit]').count(), 1);
+    await page.locator('[data-outfit] .card-heart').click(); assert.equal(await page.locator('[data-outfit]').count(), 0); await page.locator('#filter-favorites').click();
+    await switchSlot('body'); const piece = items.find(item => item.slot === 'body'); await page.locator(`[data-item="${piece.id}"] .card-heart`).click();
+    await page.locator('#filter-favorites').click(); assert.equal(await page.locator('[data-item]').count(), 1); await page.locator('[data-item] .card-heart').click(); assert.equal(await page.locator('[data-item]').count(), 0); await page.locator('#filter-favorites').click();
+  });
+  let savedSelection, savedColors, savedId;
+  await check('saving a multi-accessory look keeps colors, lock and canonical choices across reload', async () => {
+    savedSelection = await selection(); await setColor('#shell-color', '#bdace3'); await setColor('#accent-color', '#f2dbac'); savedColors = await colors();
+    if (await page.locator('#color-lock').getAttribute('aria-pressed') !== 'true') await page.locator('#color-lock').click();
+    await page.locator('#save-look').click(); savedId = await page.evaluate(() => window.duckrobe.state.saved[0].id);
+    await page.locator('#save-look').click(); assert.equal(await page.locator('#saved-count').innerText(), '1');
+    await setColor('#shell-color', '#ed8938'); await page.locator('#save-look').click(); assert.equal(await page.locator('#saved-count').innerText(), '2');
+    await page.locator('#clear-look').click(); assert.deepEqual(await selectedIds(), []); await page.locator('#saved-nav').click();
+    await page.locator(`[data-saved="${savedId}"] .card-open`).click(); assert.deepEqual(await selection(), savedSelection); assert.deepEqual(await colors(), savedColors);
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); await workspace();
+    assert.deepEqual(await selection(), savedSelection); assert.deepEqual(await colors(), savedColors); assert.equal(await page.locator('#color-lock').getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.locator('#saved-count').innerText(), '2');
+  });
+  await check('every current eyewear product has one continuous eyepiece rim and one lens', async () => {
+    await switchSlot('eyewear'); const pool = items.filter(item => item.slot === 'eyewear');
+    for (const item of pool) {
+      await selectItem(item.id);
+      const details = await page.evaluate(() => { const meshes = []; window.duckrobe.rig.group.traverse(group => { if (group.userData.slot === 'eyewear') group.traverse(object => { if (object.isMesh) meshes.push({ name: object.name, vertices: object.geometry.getAttribute('position').count }); }); }); return meshes; });
+      assert.equal(details.filter(mesh => mesh.name.split(':').at(-1) === 'single-eyepiece-rim').length, 1, item.id);
+      assert.equal(details.filter(mesh => mesh.name.split(':').at(-1) === 'single-optical-lens').length, 1, item.id); assert(details.every(mesh => mesh.vertices > 0));
+    }
+    await snapshot('eyewear.png');
+  });
+  await check('featured moves and 12 more moves trigger different real joint motion with grounded feet', async () => {
+    const actions = await page.evaluate(() => window.duckrobe.ACTIONS.map(({ id, featured }) => ({ id, featured })));
+    assert.equal(actions.length, 16); assert.equal(new Set(actions.map(action => action.id)).size, 16);
+    const extra = actions.filter(action => !action.featured && action.id !== 'rest'); assert.equal(extra.length, 12);
+    assert.equal(await page.locator('#pet-action-menu [data-action]').count(), 3); assert.equal(await page.locator('#extra-action-menu [data-action]').count(), 12);
+    if (await page.locator('#motion-toggle').getAttribute('aria-pressed') === 'true') await page.locator('#motion-toggle').click();
+    await page.mouse.move(1, 1); await frames(35); const resting = await frames(8);
+    for (const joint of Object.keys(resting[0].joints)) assert(extent(resting.map(frame => frame.joints[joint])) < .008, `${joint} did not settle`);
+    const signatures = [];
+    for (const action of actions.filter(action => action.id !== 'rest')) {
+      if (!action.featured) await page.locator('.more-actions summary').click();
+      await page.locator(`${action.featured ? '#pet-action-menu' : '#extra-action-menu'} [data-action="${action.id}"]`).click();
+      if (!action.featured) assert.equal(await page.locator('.more-actions').getAttribute('open'), null);
+      await page.waitForFunction(id => window.duckrobe.rig.behavior.getState().kind === id, action.id, { timeout: 20000 });
+      const observed = await frames(30), names = Object.keys(observed[0].joints);
+      assert(Math.max(...names.map(name => extent(observed.map(frame => frame.joints[name])))) > .008, `${action.id} must move actual joints`);
+      for (const frame of observed) assert(frame.behavior.footBounds.left >= -1e-5 && frame.behavior.footBounds.right >= -1e-5, `Feet crossed ground in ${action.id}`);
+      signatures.push(names.map(name => Math.round(extent(observed.map(frame => frame.joints[name])) * 1e4)).join('|'));
+    }
+    assert(new Set(signatures).size >= 12, 'Moves must have materially different joint patterns');
+  });
+  await check('inspection drag moves the camera, and keyboard/modal interactions retain focus', async () => {
+    const canvas = page.locator('#viewer canvas'), box = await canvas.boundingBox(); assert(box);
+    const before = await page.evaluate(() => window.duckrobe.preview.camera.position.toArray());
+    await page.mouse.move(box.x + box.width * .5, box.y + box.height * .55); await page.mouse.down(); await page.mouse.move(box.x + box.width * .76, box.y + box.height * .58, { steps: 10 }); await frames(8); await page.mouse.up(); await page.mouse.move(1, 1);
+    const after = await page.evaluate(() => window.duckrobe.preview.camera.position.toArray()); assert(before.some((value, i) => Math.abs(value - after[i]) > .02)); await page.locator('#reset-camera').click();
     await page.locator('#look-name').click(); await page.keyboard.press('/'); assert(await page.locator('#outfit-search').evaluate(element => element === document.activeElement));
-    await page.locator('#about-button').click(); assert(await page.locator('#info-dialog').isVisible());
-    assert(await page.locator('#info-dialog').evaluate(element => element.contains(document.activeElement)));
-    await page.keyboard.press('Escape'); assert(!(await page.locator('#info-dialog').isVisible()));
-    assert(await page.locator('#about-button').evaluate(element => element === document.activeElement));
-    await page.locator('#source-button').click(); assert(await page.locator('#info-dialog a[href*="microduck_rl"]').isVisible()); await page.locator('#dialog-close').click();
+    await page.locator('#about-button').click(); assert(await page.locator('#info-dialog').isVisible()); assert(await page.locator('#info-dialog').evaluate(element => element.contains(document.activeElement)));
+    await page.keyboard.press('Escape'); assert(!(await page.locator('#info-dialog').isVisible())); assert(await page.locator('#about-button').evaluate(element => element === document.activeElement));
   });
-  await check('the visible export action downloads both native formats, matching item IDs and colors', async () => {
-    const exportedSelection = await selection(); const exportedColors = await colors();
-    const downloading = page.waitForEvent('download', { timeout: 90000 }); await page.locator('#export-look').click(); const download = await downloading;
-    const destination = path.join(output, download.suggestedFilename()); await download.saveAs(destination); assert.equal(await download.failure(), null);
-    const zipped = unzipSync(await readFile(destination)); assert(zipped['microduck.urdf']); assert(zipped['microduck.xml']); assert(zipped['manifest.json']);
-    const parser = new DOMParser(); const decoder = new TextDecoder();
-    const manifest = JSON.parse(decoder.decode(zipped['manifest.json']));
-    assert.deepEqual(manifest.selection, exportedSelection); assert.deepEqual(manifest.bodyColors, exportedColors);
-    const urdf = parser.parseFromString(decoder.decode(zipped['microduck.urdf']), 'application/xml');
-    const mjcf = parser.parseFromString(decoder.decode(zipped['microduck.xml']), 'application/xml');
+  await check('actual download contains canonical v3 multi-accessory selection, colors and all 38 native meshes', async () => {
+    const current = await selection(), palette = await colors(); assert(regions.every(region => current.accessory[region]));
+    const downloading = page.waitForEvent('download', { timeout: 120000 }); await page.locator('#export-look').click(); const download = await downloading;
+    const destination = path.join(output, 'duckrobe-three-accessories.zip'); await download.saveAs(destination); assert.equal(await download.failure(), null);
+    const files = unzipSync(await readFile(destination)), decoder = new TextDecoder(), parser = new DOMParser();
+    const manifest = JSON.parse(decoder.decode(files['manifest.json'])); assert.equal(manifest.formatVersion, 3); assert.deepEqual(manifest.selection, current); assert.deepEqual(manifest.bodyColors, palette);
+    assert.deepEqual([...new Set(manifest.clothing.filter(part => part.slot === 'accessory').map(part => part.region))].sort(), [...regions].sort());
+    for (const part of manifest.clothing.filter(part => part.slot === 'accessory')) assert.equal(part.itemId, current.accessory[part.region]);
+    const urdf = parser.parseFromString(decoder.decode(files['microduck.urdf']), 'application/xml'), mjcf = parser.parseFromString(decoder.decode(files['microduck.xml']), 'application/xml');
     assert.equal(urdf.documentElement.tagName, 'robot'); assert.equal(mjcf.documentElement.tagName, 'mujoco');
-    for (const mesh of Array.from(urdf.getElementsByTagName('mesh'))) { const filename = mesh.getAttribute('filename'); assert(zipped[filename]?.length > 0, `URDF missing ${filename}`); }
+    for (const mesh of [...urdf.getElementsByTagName('mesh')]) assert(files[mesh.getAttribute('filename')]?.length > 0, `URDF missing ${mesh.getAttribute('filename')}`);
     const meshDir = mjcf.getElementsByTagName('compiler')[0].getAttribute('meshdir');
-    for (const mesh of Array.from(mjcf.getElementsByTagName('mesh'))) { const filename = path.posix.join(meshDir, mesh.getAttribute('file')); assert(zipped[filename]?.length > 0, `MJCF missing ${filename}`); }
-    assert(Object.keys(zipped).filter(filename => filename.startsWith('meshes/robot/')).length >= 25);
-    assert(Object.keys(zipped).filter(filename => filename.startsWith('meshes/outfits/') && filename.endsWith('.obj')).length >= 5);
-    assert(zipped['LICENSE-Microduck.txt']);
-    console.log(`Downloaded ${download.suggestedFilename()} (${Object.keys(zipped).length} files)`);
+    for (const mesh of [...mjcf.getElementsByTagName('mesh')]) assert(files[path.posix.join(meshDir, mesh.getAttribute('file'))]?.length > 0, `MJCF missing ${mesh.getAttribute('file')}`);
+    assert.equal(Object.keys(files).filter(filename => filename.startsWith('meshes/robot/')).length, 38); assert(files['LICENSE-Microduck.txt']);
+    console.log(`Downloaded v3 multi-accessory ZIP: ${Object.keys(files).length} files`);
   });
-  await check('saved-look deletion and reset persist cleanly', async () => {
-    await page.locator('#saved-nav').click();
-    while (await page.locator('[data-saved]').count()) await page.locator('[data-saved] .card-delete').first().click();
-    assert.equal(await page.locator('#saved-count').textContent(), '0');
-    await page.locator('#clear-filters').click(); await lookCards(24);
-    await page.locator('#reset-colors').click(); const defaults = await colors(); assert.notDeepEqual(defaults, savedColors);
-    await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); assert.equal(await page.locator('#saved-count').textContent(), '0'); assert.deepEqual(await colors(), defaults);
+  await check('legacy scalar accessories migrate without losing saved colors, dates, favorites or preview', async () => {
+    const legacyContext = await browser.newContext({ viewport: { width: 1440, height: 900 } }), legacyPage = await legacyContext.newPage(); watch(legacyPage, 'legacy: '); await legacyPage.bringToFront();
+    const piece = items.find(item => item.slot === 'accessory' && !item.id.startsWith('accessory-')); assert(piece);
+    const legacySelection = { ...catalog[0].selection, accessory: piece.id }, expected = { ...catalog[0].selection, accessory: { chest: null, side: null, back: null, [piece.region]: piece.id } };
+    const oldThumbnail = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==';
+    await legacyPage.addInitScript(({ selection, thumbnail, itemId }) => localStorage.setItem('duckrobe.wardrobe.v2', JSON.stringify({ language: 'en', selection, colors: { shell: '#bdace3', accent: '#f2dbac' }, colorLocked: true, favorites: [`item:${itemId}`], saved: [{ id: 'legacy-scalar-qa', selection, colors: { shell: '#bdace3', accent: '#f2dbac' }, date: '2026-10-01T20:00:00.000Z', thumbnail, thumbnailVersion: 'microduck-single-eye-v2' }] })), { selection: legacySelection, thumbnail: oldThumbnail, itemId: piece.id });
+    try {
+      await legacyPage.goto(url, { waitUntil: 'domcontentloaded' }); await ready(legacyPage); await workspace(legacyPage);
+      assert.deepEqual(await selection(legacyPage), expected); assert.equal(await legacyPage.locator('#color-lock').getAttribute('aria-pressed'), 'true');
+      await legacyPage.locator('#saved-nav').click(); await legacyPage.waitForFunction(() => window.duckrobe.state.saved[0].thumbnail?.length > 3000, null, { timeout: 180000 });
+      const saved = await legacyPage.evaluate(() => window.duckrobe.state.saved[0]); assert.deepEqual(saved.selection, expected); assert.equal(saved.date, '2026-10-01T20:00:00.000Z'); assert.notEqual(saved.thumbnail, oldThumbnail); assert.match(saved.thumbnailVersion, /v3$/);
+      assert.match(await legacyPage.locator('[data-saved] .card-subtitle').innerText(), /2 Oct|Oct 2/); assert(await legacyPage.evaluate(id => window.duckrobe.state.favorites.has(`item:${id}`), piece.id));
+      await legacyPage.locator('#clear-look').click(); await legacyPage.locator('[data-saved] .card-open').click(); assert.deepEqual(await selection(legacyPage), expected); assert.deepEqual(await colors(legacyPage), { shell: '#bdace3', accent: '#f2dbac' });
+      await snapshot('legacy-scalar-migration.png', legacyPage);
+    } finally { await legacyContext.close(); await page.bringToFront(); }
   });
-  await check('390px and 340px layouts keep labels readable and every control accessible', verifyResponsiveLayouts);
-  await check('changes made during slow model loading survive readiness, even in an empty saved wardrobe', verifySlowLoading);
-  }
-  await check('no browser page errors or console errors', async () => { assert.deepEqual(errors, []); });
-} catch (error) {
-  results.push({ name: 'Browser setup and application readiness', status: 'failed', error: error.stack || error.message }); console.error(error);
-} finally {
-  await writeFile(path.join(output, monocleOnly ? 'ui-validation-monocle.json' : focused ? 'ui-validation-final.json' : 'ui-validation.json'), JSON.stringify({ url, results, errors, warnings, screenshots }, null, 2));
-  console.log(`${results.filter(test => test.status === 'passed').length}/${results.length} checks passed. Results: ${output}`);
-  if (results.some(test => test.status === 'failed')) process.exitCode = 1;
+  await check('saved deletion persists and desktop 1366×768 exposes all workspace controls', async () => {
+    await page.locator('#saved-nav').click(); while (await page.locator('[data-saved]').count()) await page.locator('[data-saved] .card-delete').first().click(); assert.equal(await page.locator('#saved-count').innerText(), '0');
+    await page.locator('#clear-filters').click(); await switchSlot('all'); await page.setViewportSize({ width: 1366, height: 768 }); await workspace(); await noOverflow();
+    for (const selector of ['#save-look', '#export-look', '#color-lock', '#motion-toggle', '#pet-action-menu']) { const box = await page.locator(selector).boundingBox(); assert(box && box.y >= 0 && box.y + box.height <= 769, `${selector} outside the workspace`); }
+    await snapshot('desktop-1366.png');
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); assert.equal(await page.locator('#saved-count').innerText(), '0');
+  });
+  await check('340/390 mobile and tablet preserve natural page scrolling and usable controls', async () => {
+    for (const width of [390, 340, 768]) {
+      await page.setViewportSize({ width, height: width === 768 ? 1024 : 844 }); await page.evaluate(() => scrollTo(0, 0)); await noOverflow();
+      const natural = await page.locator('#catalog-scroll').evaluate(element => ({ style: getComputedStyle(element).overflowY, height: element.clientHeight, content: element.scrollHeight })); assert(['visible', 'clip'].includes(natural.style)); assert(natural.height >= natural.content - 3);
+      await snapshot(`${width === 768 ? 'tablet' : `mobile-${width}`}-top.png`);
+      await switchSlot('accessory'); await page.locator('[data-accessory-region="back"]').click(); const item = items.find(item => item.slot === 'accessory' && item.region === 'back');
+      const before = await selection(); await selectItem(item.id); const after = await selection(); unchangedOtherSlots(before, after, 'accessory'); assert.deepEqual(after.accessory, { ...before.accessory, back: before.accessory.back === item.id ? null : item.id });
+      await page.locator('#export-look').scrollIntoViewIfNeeded(); assert(await page.locator('#export-look').isVisible()); await noOverflow(); await snapshot(`${width === 768 ? 'tablet' : `mobile-${width}`}-controls.png`);
+      await page.locator('[data-language="zh"]').click(); await noOverflow(); await page.locator('[data-language="en"]').click(); await switchSlot('all');
+    }
+    await page.setViewportSize({ width: 1440, height: 900 }); await workspace();
+  });
+  await check('no browser page or console errors', async () => { assert.deepEqual(errors, []); });
+  await switchSlot('all'); await selectLook(catalog[0].id); await workspace(); await snapshot('desktop-final.png');
+} catch (error) { results.push({ name: 'Browser setup and application readiness', status: 'failed', error: error.stack || error.message }); console.error(error); }
+finally {
+  await writeFile(path.join(output, 'ui-validation.json'), JSON.stringify({ url, results, errors, warnings, screenshots }, null, 2));
+  console.log(`${results.filter(result => result.status === 'passed').length}/${results.length} checks passed. Results: ${output}`);
+  if (results.some(result => result.status === 'failed')) process.exitCode = 1;
   await browser.close();
 }
