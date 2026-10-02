@@ -1,10 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
-  <title id="title">DuckRobe — a single-eyed Microduck</title>
-  <g fill="none" stroke="#29362d" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M10 20c0-6 4-10 10-10h24c6 0 10 4 10 10v13c0 5-4 9-9 9H20c-6 0-10-4-10-10Z"/>
-    <path d="M10 31h16m-14 7h28"/>
-    <circle cx="41" cy="25" r="8"/>
-    <circle cx="41" cy="25" r="3.5"/>
-    <path d="M27 43v6h11v-6m-11 6-6 7h-7m24-7 6 7h7"/>
+  <title id="title">DuckRobe — a single-eyed Microduck head</title>
+  <g fill="none" stroke="#29362d" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M7 30c0-11 9-18 21-18h10c11 0 18 7 19 18l1 9c1 8-4 13-13 13H20C12 52 7 47 7 39Z"/>
+    <path d="M8 38h19c4 0 7 2 8 5"/>
+    <circle cx="44" cy="30" r="9"/>
+    <circle cx="44" cy="30" r="3.7" fill="#29362d" stroke="none"/>
   </g>
 </svg>

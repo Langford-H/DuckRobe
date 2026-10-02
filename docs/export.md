@@ -17,14 +17,18 @@
 | `microduck.xml` | 完整 MuJoCo MJCF，保留原始 14 个驱动关节、浮动根节点、惯量、碰撞、传感器和 actuator 定义 |
 | `microduck.urdf` | 同一机器人关节树、轴、限位、质量和完整惯量张量，服饰通过无质量 fixed link 挂载 |
 | `meshes/robot/*.stl` | 38 个上游原始机器人 mesh |
-| `meshes/outfits/*.obj` | 当前帽子、衣服、配饰的几何；嵌套缩放、旋转和平移已转换到对应 body 的局部坐标 |
+| `meshes/outfits/*.obj` | 当前五槽服饰与三个区域配饰的几何；嵌套缩放、旋转和平移已转换到对应 body 的局部坐标 |
 | `materials.mtl` | 服饰颜色与透明度，MJCF 和 URDF 内也写入相同颜色 |
 | `manifest.json` | v3 五槽单件选择、三配饰区域、本体颜色、来源版本、关节参数、每个单件的实际 body 挂点和兼容性说明 |
 | `LICENSE-Microduck.txt` | 原样保存的上游许可证 |
 
 长度单位为米，角度为弧度。网页里的蹦跳和转台朝向不会冻结进导出模型。导出服饰在机器人参考坐标中随原有关节运动。
 
-MJCF 另外包含 `duckrobe_preview` keyframe，可以恢复网页里的站立参考姿态和脚底地面高度。挂在左右 ankle 的鞋会按实际顶点最低点补偿根节点高度，记录为 `previewGroundAdjustment`；长裙、配饰与上腿暖套不改变脚底基准。源模型的 CAD 零位和关节定义仍保留。导出的 ZIP README 附有相同代码：
+MJCF 另外包含 `duckrobe_preview` keyframe，可以恢复网页里的站立参考姿态和脚底地面高度。左右鞋袜分别挂在真实的 `ankle_left`、`ankle_right` body；暖腿套、绑带和护膝固定于 `leg`、`leg_2`，随对应关节运动。服饰沿用默认站姿中 Z 轴朝上的稳定建模挂点；导出会把它转换回原生 CAD body 坐标，不直接把两种坐标混用。
+
+鞋面根据原生脚部截面和脚背曲面构造双壁空腔，并保留真实鞋口与封闭鞋底。OBJ 同时包含内壁、外壁和鞋底；这些几何与网页预览共用，导出不会把空腔简化成填满脚部的实心外壳。袜套、绑带和护膝也保留对应部位的内部净空。
+
+挂在左右 ankle 的鞋会按实际顶点最低点补偿根节点高度，记录为 `previewGroundAdjustment`；鞋底改形后会自动重新计算，无需写死厚度或抬高距离。长裙、配饰与上腿暖套不改变脚底基准。地面补偿只改变整只机器人的高度，不能修复鞋与原生脚、脚踝的相互交叉；足部贴合需要独立表面验证。源模型的 CAD 零位和关节定义仍保留。导出的 ZIP README 附有相同代码：
 
 ```python
 import mujoco
@@ -55,9 +59,12 @@ MJCF 是保留上游 actuator、armature、传感器和接触参数的完整格�
 node scripts/validate-exports.mjs --all --out=/tmp/duckrobe-export-v3-validation
 python scripts/validate-exports.py /tmp/duckrobe-export-v3-validation
 node scripts/validate-subpath-assets.mjs
+node scripts/validate-footwear-fit.mjs
 ```
 
 第一步在 Node 中实际构造 100 套服饰、五槽及三配饰混搭、多 body 腿装、按区域卸除、旧配饰迁移、裸机和自定义本体配色，生成 ZIP 并检查两个格式的全部相对 mesh 引用。也检查网页动作没有写进静态导出文件。第二步需要 Python 的 `mujoco` 与 `numpy`，实际编译每个 MJCF，对照官方源模型检查关节、actuator、质量、惯量与碰撞参数不变，同时解析 URDF 并逐 body 对照两格式的预览姿态和服饰挂点。第三步使用严格 HTTP 服务器，实际验证根路径及 `/DuckRobe/` Pages 子路径下的 GLB、原始 XML、38 个 STL 和许可证加载，以及多配饰 ZIP 完整性；部署前缀不会写入模型的相对 mesh 引用。
+
+第四步独立检查腿装与真实原生脚、脚踝及相关腿部网格的表面交叉、内部嵌入和间距，包括动画姿态。它与「脚底最低点为零」的导出验证是不同的检查：贴地不代表鞋子没有穿模。
 
 只检查代表性系列与混搭时可省略 `--all`。生成文件写到指定临时目录，不修改仓库资产。
 
@@ -68,7 +75,9 @@ node scripts/validate-exports.mjs --all --cases=butter-walk,active-behavior-expo
 python scripts/validate-exports.py /tmp/duckrobe-export-fit-check
 ```
 
-若完整动力学已验证通过，后续只调整视觉几何，可保留源 XML、惯量与 actuator 的保护检查，同时单独复验编译、几何、挂点、姿态、配色与地面高度：
+鞋子或腿装的顶点位置、挂点或脚底高度改变后，应在新目录重新生成受影响案例，并运行完整 Python 验证，重新对照质量矩阵、力和预览姿态。此前造型的位置一致性报告不能证明新鞋的等价性；未改变的案例可以在模型、几何、挂点和预览姿态逐项一致后沿用原报告。
+
+若完整动力学已验证通过，后续仅调整法线、三角面绕序或颜色，并已确认顶点位置、三角面集合、挂点和预览姿态不变，可保留源 XML、惯量与 actuator 的保护检查，同时单独复验编译、几何、挂点、姿态、配色与地面高度：
 
 ```bash
 python scripts/validate-exports.py /tmp/duckrobe-export-fit-check --geometry-only --prior-physics-report /tmp/duckrobe-export-v3-validation/mujoco-validation.json

@@ -38,6 +38,8 @@ jobs:
         run: |
           node scripts/validate-hat-fit.mjs
           node scripts/validate-eyewear-fit.mjs
+      - name: Validate footwear against native feet and moving joints
+        run: node scripts/validate-footwear-fit.mjs
       - name: Validate robot behavior
         run: node scripts/validate-behavior.mjs
       - name: Validate all outfit exports

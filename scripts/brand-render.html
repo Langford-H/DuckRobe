@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DuckRobe studio render</title>
+    <style>
+      @font-face { font-family: Brand Lato; src: url('/scripts/assets/Lato-Regular.ttf') format('truetype'); font-weight: 400; }
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body { background: #f8f4e7; color: #29362d; }
+      #copy { position: absolute; z-index: 2; left: 6%; top: 50%; width: 30%; transform: translateY(-50%); }
+      #logo { display: block; width: 100%; height: auto; }
+      #tagline { margin: .3vw 0 0; font: 400 1.36vw/1.4 Brand Lato, sans-serif; letter-spacing: -.018em; white-space: nowrap; }
+      #stage { position: absolute; inset: 0 1% 0 35%; }
+      #stage canvas { display: block; width: 100%; height: 100%; }
+    </style>
+  </head>
+  <body>
+    <div id="copy"><img id="logo" src="/brand/logo.svg" alt="DuckRobe" /><p id="tagline">Every duck deserves a wardrobe.</p></div>
+    <div id="stage" aria-label="Three real Microducks dressed up and playing together"></div>
+    <script type="module" src="./brand-scene.js"></script>
+  </body>
+</html>

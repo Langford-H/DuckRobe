@@ -10,7 +10,7 @@ A playful 3D wardrobe for the real, single-eyed **Microduck**. Explore **100 cur
 
 - **A palette for every look.** Complete outfits apply coordinated shell and accent colors. Lock your favorite body colors while trying other outfits; changing an individual piece keeps your colors.
 - **A real little wardrobe.** Mix hats, single-frame eyewear, clothes, accessories and legwear. Chest, side and back accessories coexist; replacing one position leaves the other two in place. Remove any piece with its Wearing now chip.
-- **Clothes that fit Microduck.** Smooth tilted hats have fitted inner linings. Garments have distinct cuts, closures, hems and details, with accessories positioned against the selected clothes. Ten collections cover everyday dressing, travel, workwear, sport, celebrations and a little fantasy.
+- **Clothes that fit Microduck.** Smooth tilted hats have fitted inner linings. Footwear has open, fitted shoe cavities, complete soles and room for moving ankle joints. Garments have distinct cuts, closures, hems and details, with accessories positioned against the selected clothes. Ten collections cover everyday dressing, travel, workwear, sport, celebrations and a little fantasy.
 - **A lively companion.** Hop, dance, twirl, greet, peek, tilt, nod, sway, take tiny steps, double-hop, shimmy, tap a toe, bow and look around. Calm observation and rest complete the 16-move library. Idle play, mouse curiosity and manual controls share the same real robot joints.
 - **Comfortable browsing.** On desktop, the catalog scrolls independently with a wheel, trackpad, keyboard or mouse drag, keeping the duck and filters visible. Mobile uses natural page scrolling. Previews load as you browse.
 - **Make it yours.** English by default, with a Chinese switch. Search, favorites, color lock and saved combinations stay in your browser. Existing saved looks migrate to the new accessory positions.
@@ -38,7 +38,7 @@ npm run preview
 
 ## GitHub Pages
 
-[Deploy to GitHub Pages](https://github.com/ruziniuuuuu/DuckRobe/actions/workflows/deploy-pages.yml) checks catalog geometry, hat and eyewear fit, robot behavior, every outfit export and asset loading before building. Pushes to `main` deploy automatically; pull requests run validation and build. The repository's Pages source is **GitHub Actions**.
+[Deploy to GitHub Pages](https://github.com/ruziniuuuuu/DuckRobe/actions/workflows/deploy-pages.yml) checks catalog geometry, hat, eyewear and footwear fit, robot behavior, every outfit export and asset loading before building. Pushes to `main` deploy automatically; pull requests run validation and build. The repository's Pages source is **GitHub Actions**.
 
 The build reads the Pages base path for both the interface and robot/export assets. To preview the project path locally:
 
@@ -65,20 +65,21 @@ Start a local server, then run `npm run check:ui`. Fresh Chromium exercises Engl
 ```bash
 node scripts/validate-hat-fit.mjs
 node scripts/validate-eyewear-fit.mjs
+node scripts/validate-footwear-fit.mjs
 ```
 
-The fit checks use actual native head triangles in closed- and open-beak poses, checking all 38 hats and 19 single-eye frames for intersections and clearance.
+The head fit checks use actual native triangles in closed- and open-beak poses for all 38 hats and 19 single-eye frames. Footwear checks all 28 legwear items on both sides, including the neighboring foot, ankle, motor and calf surfaces, with real movement samples from all 16 actions. Surface intersection, clearance and containment are checked independently of appearance. Native cross-sections and the full 60 Hz movement envelope can be remeasured with `node scripts/measure-footwear-native.mjs`; reports go to `test-results/` and do not overwrite clothing geometry.
 
 ## Project map
 
 - `src/outfits.js`: collections, items, canonical selections and shared fit adjustments.
-- `src/garment-geometry.js`, `src/accessory-geometry.js`, `src/garment-primitives.js`: clothing geometry and shared construction tools.
+- `src/garment-geometry.js`, `src/footwear-geometry.js`, `src/accessory-geometry.js`, `src/garment-primitives.js`: shared clothing construction for preview and export.
 - `src/robot.js`: official geometry, native joints, clothing anchors and body colors.
 - `src/behavior.js`: idle, manual and pointer-driven joint poses.
 - `src/main.js`, `src/i18n.js`: wardrobe controls, saved looks and bilingual copy.
 - `src/preview.js`: live fitting room and separate product photography.
 - `src/export.js`: URDF/MJCF and mesh packaging.
-- `public/brand/`: promotional cover, scalable logo and single-eye brand mark. See [brand notes and generation prompt](docs/brand.md).
+- `public/brand/`: promotional cover, scalable logo and single-eye brand mark. The cover uses the actual 3D model, vector branding and local typography. See [brand notes and the reproducible render command](docs/brand.md).
 - `public/robot/manifest.json`: pinned upstream versions and asset hashes.
 
 ## Sources

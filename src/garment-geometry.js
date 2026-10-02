@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { PI, V, mat, add, ellipsoid, tube, loop, disk, roundedShape, softBox, surfaceX, frontPoints, facePatch, pocket, pointedCollar, buttonRow, fabricShell, FITTED, edge, cuffs, knitRibs, cable, strap, zipper, star, flower, petalPanel } from './garment-primitives.js';
 import { accessory } from './accessory-geometry.js';
+import { createFootwear } from './footwear-geometry.js';
 
 function classicBody(item) {
  const g=new THREE.Group(),[a,b,c]=item.palette.map(color=>mat(color)),trim=mat(item.palette[1],{roughness:.95}),hardware=mat(item.palette[2],{metalness:.45,roughness:.38}),kind=item.kind;
@@ -147,28 +148,8 @@ function eyewear(item) {
  return g;
 }
 
-function classicLegwear(item) {
- const[a,b,c]=item.palette.map(color=>mat(color)),k=item.kind;
- if(k==='legwarmers')return['leg','leg_2'].map((bodyName,index)=>{
-  const g=new THREE.Group(),s=index?-1:1,cx=.011,cy=s*.006;fabricShell(g,a,[[-.039,.013,.014],[-.030,.014,.014],[-.020,.013,.013],[-.015,.013,.013]],{cx,folds:.0006,name:'rib-knit-legwarmer'});g.position.y=cy;for(let i=0;i<5;i++)loop(g,b,[cx,0,-.038+i*.005],.0135,.014,.0006,'warm-leg-rib');return{bodyName,group:g};
- });
- return['ankle_left','ankle_right'].map((bodyName,index)=>{
-  const g=new THREE.Group(),s=index?-1:1,y=-s*.016,x=.007;
-  if(k==='socks'){fabricShell(g,b,[[-.014,.0155,.016],[-.004,.0155,.016],[.007,.014,.015]],{cx:.002,folds:.0003,name:'ankle-sock'});g.position.y=-s*.021;for(let i=0;i<3;i++)loop(g,a,[.002,0,-.003+i*.003],.0157,.0163,.0007,'sock-stripe');return{bodyName,group:g}}
-  softBox(g,k==='ballet'?c:b,[x,y,-.0265],[.060,.046,.0038],.007,'sole');const shoe=ellipsoid(g,a,[x+.002,y,-.016],[.031,.023,.013],'rounded-shoe-upper');const p=shoe.geometry.attributes.position;for(let i=0;i<p.count;i++)if(p.getZ(i)<-.52)p.setZ(i,-.52);shoe.geometry.computeVertexNormals();loop(g,c,[x,y,-.0235],.028,.021,.00065,'welt-stitch');
-  if(['boots','wellies','high-top','trail'].includes(k)){const height=k==='wellies'?.016:k==='boots'?.014:.011;const cuff=fabricShell(g,a,[[-.012,.019,.020],[height/2,.017,.018],[height,.017,.018]],{cx:x-.006,folds:.0003,name:'ankle-boot-shaft'});cuff.position.y=y;loop(g,b,[x-.006,y,height],.017,.018,.0012,'boot-top-binding')}
-  if(k==='wellies')for(const[xx,yy,zz]of[[.025,-.013,-.014],[.029,.009,-.012],[.007,-.020,.008],[-.007,.014,.005]])disk(g,b,[x+xx,y+yy,zz],.0015,.0005,'wellie-dot');
-  if(['sneakers','boots','trail','high-top'].includes(k)){
-   ellipsoid(g,b,[.008,y,-.004],[.020,.010,.0023],'shoe-tongue');for(let i=0;i<4;i++){const xx=-.002+i*.006;tube(g,c,[[xx,y-.010,-.004],[xx+.003,y,-.001],[xx,y+.010,-.004]],.00065,'lace',12);for(const d of[-1,1])disk(g,b,[xx,y+d*.011,-.003],.001,.0005,'eyelet','z')}
-   if(['sneakers','high-top'].includes(k))ellipsoid(g,b,[.029,y,-.014],[.011,.020,.008],'rubber-toe-cap');for(let i=0;i<5;i++)softBox(g,c,[-.012+i*.010,y,-.029],[.005,.039,.0013],.0005,'sole-tread');
-  }
-  if(k==='loafers'){tube(g,b,[[.002,y-.014,-.005],[.005,y,-.002],[.002,y+.014,-.005]],.0021,'loafer-saddle');softBox(g,c,[.006,y,-.001],[.007,.009,.0015],.0006,'penny-slot')}
-  if(k==='ballet'){for(const d of[-1,1]){const bow=ellipsoid(g,b,[.020,y+d*.005,-.006],[.006,.006,.002],'ribbon-bow');bow.rotation.z=d*.4}tube(g,b,[[-.003,y-.019,-.013],[.010,y,-.005],[-.003,y+.019,-.013]],.001,'slipper-ribbon')}
-  return{bodyName,group:g};
- });
-}
 export function createGarment(item) {
- if(item.slot==='legwear')return legwear(item);const builders={hat,eyewear,body,accessory},builder=builders[item.slot];if(!builder)throw new Error(`Unknown clothing slot: ${item.slot}`);return[{bodyName:['hat','eyewear'].includes(item.slot)?'jaw_soft':'trunk_base',group:builder(item)}];
+ if(item.slot==='legwear')return createFootwear(item);const builders={hat,eyewear,body,accessory},builder=builders[item.slot];if(!builder)throw new Error(`Unknown clothing slot: ${item.slot}`);return[{bodyName:['hat','eyewear'].includes(item.slot)?'jaw_soft':'trunk_base',group:builder(item)}];
 }
 
 const NEW_BODY_KINDS = new Set(['duffle','biker','wrap-dress','pleated-dress','poncho','jersey','hanfu','fleece','bolero','quilted-jacket','tunic','shell-vest','balloon-dress','capelet','rugby','workshirt']);
@@ -274,37 +255,6 @@ function decorateBody(g,item) {
  return g;
 }
 function body(item){return decorateBody(NEW_BODY_KINDS.has(item.kind)?tailoredBody(item):classicBody(item),item)}
-
-function legwear(item) {
- const k=item.kind,base={'mary-jane':'ballet',moccasins:'loafers','chunky-sneakers':'sneakers',wraps:'legwarmers'}[k];
- if(k==='kneepads')return['leg','leg_2'].map((bodyName,index)=>{
-  const g=new THREE.Group(),[a,b,c]=item.palette.map(color=>mat(color)),side=index?-1:1;
-  softBox(g,a,[.034,side*.007,-.007],[.007,.026,.030],.006,'articulated-knee-pad');softBox(g,b,[.039,side*.007,-.007],[.002,.016,.019],.004,'kneepad-cushion');
-  for(const z of[-.017,.003])tube(g,c,[[.038,side*.020,z],[.009,side*.024,z],[-.006,side*.007,z],[.009,-side*.005,z],[.038,-side*.006,z]],.001,'kneepad-soft-retaining-strap',24);return{bodyName,group:g};
- });
- if(!base)return classicLegwear(item);
- const parts=classicLegwear({...item,kind:base}),[a,b,c]=item.palette.map(color=>mat(color));
- parts.forEach(({group:g},index)=>{
-  const side=index?-1:1,y=-side*.016;
-  if(k==='mary-jane'){
-   for(const m of[...g.children])if(['ribbon-bow','slipper-ribbon'].includes(m.name)){g.remove(m);m.geometry.dispose()}
-   tube(g,b,[[.002,y-.018,-.010],[.005,y,-.002],[.002,y+.018,-.010]],.0019,'mary-jane-instep-strap',20);softBox(g,c,[.004,y+side*.013,-.004],[.006,.005,.002],.001,'mary-jane-buckle');
-  }
-  if(k==='moccasins') {
-   for(const m of[...g.children])if(['loafer-saddle','penny-slot'].includes(m.name)){g.remove(m);m.geometry.dispose()}
-   tube(g,b,[[.003,y-.014,-.005],[.024,y-.016,-.007],[.033,y,-.010],[.024,y+.016,-.007],[.003,y+.014,-.005]],.001,'moccasin-u-vamp-stitch',32);
-   for(let i=0;i<7;i++)tube(g,c,[[.001,y-.012+i*.004,-.004],[.005,y-.012+i*.004,-.011]],.0007,'suede-fringe',8);
-  }
-  if(k==='chunky-sneakers') {
-   for(const m of g.children)if(m.isMesh&&m.name==='sole'){m.scale.z=2.5;m.position.z-=.0029;m.scale.x=1.045;m.scale.y=1.045}
-   for(let i=0;i<4;i++)softBox(g,c,[-.012+i*.012,y,-.030],[.008,.040,.004],.001,'sculpted-platform-sole-block');
-   tube(g,b,[[.024,y-.021,-.015],[.001,y-.021,-.010],[-.011,y-.018,-.009]],.0011,'layered-sneaker-side-panel');
-  }
-  if(k==='wraps') {
-   for(const sign of[-1,1])tube(g,c,Array.from({length:40},(_,i)=>{const t=i/39*PI*4;return[.011+.015*Math.cos(t),.016*Math.sin(t),-.039+i/39*.024+sign*.0006]}),.0008,'cross-wrapped-leg-ribbon',52);
-  }
- });return parts;
-}
 
 // Sampled from the pinned official top_head_shell STL, in the existing
 // world-oriented jaw_soft authoring frame. Colours never change this surface.

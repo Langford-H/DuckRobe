@@ -25,7 +25,7 @@ const outfitById = new Map(OUTFITS.map(item => [item.id, item]));
 const itemById = new Map(ITEMS.map(item => [item.id, item]));
 const themeById = new Map(THEMES.map(item => [item.id, item]));
 const STORAGE_KEY = 'duckrobe.wardrobe.v2';
-const THUMBNAIL_VERSION = 'microduck-couture-v3';
+const THUMBNAIL_VERSION = 'microduck-footwear-v4';
 let stored = {};
 try { stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {}; localStorage.removeItem('duckrobe.wardrobe.v1'); } catch { /* Browsing works without storage. */ }
 const validSelection = normalizeSelection;

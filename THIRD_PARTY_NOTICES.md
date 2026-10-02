@@ -58,3 +58,14 @@ output hashes.
 DuckRobe's renderer assembles those official parts independently, applies its own
 soft cream/orange materials, and adds decorative preview animation. Clothing and
 accessory geometry authored for DuckRobe is separate from the native robot.
+
+## Cover typography
+
+- Font: Lato Regular 2.015, unmodified; Copyright (c) 2011–2015 by
+  tyPoland Lukasz Dziedzic, with Reserved Font Name "Lato".
+- Source: http://www.latofonts.com
+- Local file: `scripts/assets/Lato-Regular.ttf`.
+- License: SIL Open Font License 1.1, included at
+  `scripts/assets/LATO-LICENSE.txt`.
+- Used to outline the vector wordmark and by the local cover-rendering utility;
+  no remote font request is required.
