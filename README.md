@@ -1,3 +1,5 @@
+<h1 align="center"><img src="public/brand/logo.svg" width="280" alt="DuckRobe" /></h1>
+
 [![DuckRobe — Every duck deserves a wardrobe.](public/brand/cover.png)](https://ruziniuuuuu.github.io/DuckRobe/)
 
 ## Citation
