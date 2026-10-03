@@ -1,4 +1,5 @@
 const copy = {
+  fullLook: ['Full look', '看全身'], closeUp: ['Close up', '看近景'], colorTool: ['Colors', '调色'], motionTool: ['Moves', '动作'], closetEyebrow: ['02 / THE COLLECTION', '02 / 衣橱精选'],
   stageLive: ['LIVE & A LITTLE LIVELY', '在线，也很活泼'], footerEnergy: ['EVERY DUCK DESERVES A WARDROBE.', '每只小鸭，都值得拥有自己的衣橱。'], madeForMicroduck: ['MADE FOR MICRODUCK', '为 MICRODUCK 而作'],
   mainNavigation: ['Main navigation', '主导航'], fittingRoom: ['3D fitting room', '三维试衣间'], clothingWardrobe: ['Clothing wardrobe', '服装衣橱'], playWithDuck: ['Play with your duck', '和小鸭子玩耍'],
   chooseCategory: ['Choose a wardrobe category', '选择衣橱类别'], colorPalettes: ['Duck color palettes', '小鸭子调色盘'], filterCollection: ['Filter by collection', '按系列筛选'], languageChoice: ['Language', '语言'],
@@ -12,7 +13,7 @@ const copy = {
   multiPartHint: ['Three spots. Make it your own.', '三个位置，搭出你的个性。'], scrollWardrobe: ['Wardrobe list. Scroll, drag, or use the keyboard to browse.', '衣橱列表，可以滚动、拖动或使用键盘浏览。'],
   navWardrobe: ['Wardrobe', '小衣橱'], navSaved: ['Saved looks', '我的搭配'],
   githubLabel: ['GitHub', '项目仓库'], githubRepository: ['Open DuckRobe on GitHub in a new tab', '在新标签页打开 DuckRobe 的 GitHub 仓库'], projectRepository: ['DuckRobe on GitHub', 'DuckRobe 项目仓库'],
-  heroEyebrow: ['THE LITTLE WARDROBE CLUB', '小鸭子的衣橱俱乐部'],
+  heroEyebrow: ['A WARDROBE. A PERSONALITY.', '一间衣橱，一点个性。'],
   heroLead: ['Every duck deserves', '每只小鸭，都值得'], heroAccent: ['a wardrobe.', '拥有自己的衣橱。'],
   heroDescription: ['Dress up your Microduck. Make a little mischief.', '为你的 Microduck 换一身，快乐捣个蛋。'],
   stageTitle: ['Your little duck', '你的小鸭子'], loadingTitle: ['Your little duck is getting ready…', '小鸭子正在整理衣橱…'],

@@ -42,15 +42,15 @@ function dispose(parts) {
   geometries.forEach(geometry => geometry.dispose()); materials.forEach(material => material.dispose());
 }
 
-export async function createPreview({ viewer, colors, selection, onReaction = () => {} }) {
+export async function createPreview({ viewer, colors, selection, onReaction = () => {}, onFraming = () => {} }) {
   const renderer = rendererFor();
   renderer.domElement.setAttribute('role', 'img'); viewer.append(renderer.domElement);
   const scene = new THREE.Scene(); lights(scene);
   const camera = new THREE.PerspectiveCamera(30, 1, .01, 5); camera.up.set(0, 0, 1); camera.position.set(.52, -.67, .35);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(0, 0, .135); controls.enableDamping = true; controls.enablePan = false;
-  controls.minDistance = .42; controls.maxDistance = 1.8; controls.minPolarAngle = .3; controls.maxPolarAngle = Math.PI / 2 + .04; controls.saveState();
-  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(.16, .167, .009, 96), new THREE.MeshStandardMaterial({ color: 0xe7e6d7, roughness: .95 }));
+  controls.minDistance = .16; controls.maxDistance = 1.8; controls.minPolarAngle = .3; controls.maxPolarAngle = Math.PI / 2 + .04; controls.saveState();
+  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(.16, .167, .009, 96), new THREE.MeshStandardMaterial({ color: 0xe4e5e1, roughness: .95 }));
   plinth.rotation.x = Math.PI / 2; plinth.position.z = -.006; plinth.receiveShadow = true; scene.add(plinth);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(3, 3), new THREE.ShadowMaterial({ opacity: .14 }));
   floor.position.z = -.011; floor.receiveShadow = true; scene.add(floor);
@@ -61,16 +61,44 @@ export async function createPreview({ viewer, colors, selection, onReaction = ()
   let pointer = { x: 0, y: 0, near: 0, active: false }, pointerMovedAt = -Infinity;
   const clock = new THREE.Clock(), robotCenter = new THREE.Vector3();
   const cameraRight = new THREE.Vector3(), cameraUp = new THREE.Vector3(), gaze = new THREE.Vector3();
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  let framing = 'full', cameraTransition = null;
+  const direction = new THREE.Vector3(.68, -.78, .18).normalize();
+  function frameCamera(mode, { immediate = false } = {}) {
+    framing = mode;
+    const portrait = mode === 'portrait';
+    // Compose in camera space so a narrow mobile viewport still fits the head.
+    const bounds = new THREE.Box3().setFromObject(portrait ? rig.bodies.get('jaw_soft') : rig.group);
+    const size = bounds.getSize(new THREE.Vector3());
+    const span = portrait
+      ? Math.max(.135, size.z + .025, .19 / camera.aspect)
+      : Math.max(.35, size.z + .08, Math.hypot(size.x, size.y) / camera.aspect + .04);
+    const target = new THREE.Vector3(0, 0, portrait ? Math.max(.245, bounds.max.z - span * .44) : (bounds.min.z + bounds.max.z) / 2);
+    const right = new THREE.Vector3().crossVectors(camera.up, direction).normalize();
+    if (portrait) target.addScaledVector(right, .012);
+    const position = target.clone().addScaledVector(direction, span / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))));
+    cameraTransition = { target, position };
+    if (immediate || reducedMotion.matches) {
+      controls.target.copy(target); camera.position.copy(position);
+      cameraTransition = null;
+      controls.update();
+    }
+    viewer.dataset.framing = mode;
+    plinth.visible = !portrait;
+    onFraming(mode);
+  }
   const api = {
     rig, renderer, scene, camera, controls, thumbnails: new Map(), thumbnailsPending: 0, behaviorState: null,
     setSelection(next) { dispose(activeParts); activeParts = attach(rig, next); inspectUntil = performance.now() + 1200; },
     setColors(next) { rig.setColors(next); },
     setMotion(next) { enabled = next; },
-    trigger(action) { inspectUntil = 0; return rig.trigger(action); },
-    resetCamera() { controls.reset(); },
+    trigger(action) { inspectUntil = 0; if (['hop', 'double-hop', 'dance', 'turn', 'tiny-steps', 'toe-tap', 'bow'].includes(action)) frameCamera('full'); return rig.trigger(action); },
+    setFraming: frameCamera,
+    getFraming() { return framing; },
+    resetCamera() { frameCamera(framing); },
     setLabel(label) { renderer.domElement.setAttribute('aria-label', label); },
   };
-  controls.addEventListener('start', () => { dragging = true; rig.setInteraction(true); pointer.active = false; });
+  controls.addEventListener('start', () => { cameraTransition = null; dragging = true; rig.setInteraction(true); pointer.active = false; });
   controls.addEventListener('end', () => { dragging = false; rig.setInteraction(false); inspectUntil = performance.now() + 1400; });
   viewer.addEventListener('pointermove', event => {
     if (dragging || event.pointerType === 'touch') return;
@@ -86,11 +114,25 @@ export async function createPreview({ viewer, colors, selection, onReaction = ()
     if (enabled && near > .65 && now - lastReaction > 5) { lastReaction = now; onReaction(); }
   });
   viewer.addEventListener('pointerleave', () => { pointer = { ...pointer, active: false, near: 0 }; });
+  let lastFrame = performance.now();
   function animate() {
     requestAnimationFrame(animate);
+    const now = performance.now(), delta = Math.min((now - lastFrame) / 1000, .1); lastFrame = now;
+    if (cameraTransition) {
+      const alpha = reducedMotion.matches ? 1 : 1 - Math.exp(-delta * 5);
+      camera.position.lerp(cameraTransition.position, alpha);
+      controls.target.lerp(cameraTransition.target, alpha);
+      if (camera.position.distanceTo(cameraTransition.position) < .0001 && controls.target.distanceTo(cameraTransition.target) < .0001) cameraTransition = null;
+    }
     api.behaviorState = rig.animate(clock.getElapsedTime(), { enabled, pointer: { ...pointer, active: pointer.active && performance.now() - pointerMovedAt < 2400 }, interacting: dragging || performance.now() < inspectUntil });
     controls.update(); renderer.render(scene, camera);
   }
+  frameCamera('full', { immediate: true });
+  // Resize composition only after the user changes viewport, never during an orbit.
+  let previousAspect = camera.aspect;
+  new ResizeObserver(() => {
+    if (Math.abs(camera.aspect - previousAspect) > .01) { previousAspect = camera.aspect; frameCamera(framing); }
+  }).observe(viewer);
   animate();
 
   // A separate, neutral rig keeps product photos consistent while the pet plays.

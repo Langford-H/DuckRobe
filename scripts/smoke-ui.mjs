@@ -31,7 +31,8 @@ async function selectedIds(target = page) { return target.evaluate(() => window.
 async function selectLook(id, target = page) { await target.locator(`[data-outfit="${id}"] .card-open`).click(); }
 async function selectItem(id, target = page) { await target.locator(`[data-item="${id}"] .card-open`).click(); }
 async function switchSlot(slot, target = page) { await target.locator(`#slot-controls [data-slot="${slot}"]`).click(); }
-async function setColor(selector, value, target = page) { await target.locator(selector).evaluate((input, value) => { input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); }, value); }
+async function openPanel(id, target = page) { if (!await target.locator('#' + id).evaluate(panel => panel.open)) await target.locator('#' + id + ' > summary').click(); }
+async function setColor(selector, value, target = page) { await openPanel('colors-panel', target); await target.locator(selector).evaluate((input, value) => { input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); }, value); }
 async function snapshot(name, target = page, options = {}) { await target.screenshot({ path: path.join(output, name), timeout: 90000, ...options }); screenshots.push(name); }
 async function workspace(target = page) { await target.locator('.wardrobe-layout').evaluate(element => scrollTo(0, element.getBoundingClientRect().top + scrollY - 24)); }
 async function thumbnailsIdle(target = page) {
@@ -109,7 +110,7 @@ try {
     await selectLook(first.id); assert.deepEqual(await colors(), first.bodyColors);
     const image = await page.locator(`[data-outfit="${first.id}"] img`).getAttribute('src');
     await setColor('#shell-color', '#9fbc8e'); await setColor('#accent-color', '#f5cf76');
-    await page.locator('#color-lock').click(); assert.equal(await page.locator('#color-lock').getAttribute('aria-pressed'), 'true');
+    await openPanel('colors-panel'); await page.locator('#color-lock').click(); assert.equal(await page.locator('#color-lock').getAttribute('aria-pressed'), 'true');
     await selectLook(different.id); assert.deepEqual(await colors(), { shell: '#9fbc8e', accent: '#f5cf76' });
     assert.equal(await page.locator(`[data-outfit="${first.id}"] img`).getAttribute('src'), image, 'Kit previews must retain their own palette');
     const painted = await page.evaluate(() => { const result = {}; window.duckrobe.rig.group.traverse(mesh => { if (!mesh.isMesh) return; if (mesh.userData.meshFile === 'top_head_shell.stl') result.shell = `#${mesh.material.color.getHexString()}`; if (mesh.userData.meshFile === 'jaw.stl') result.accent = `#${mesh.material.color.getHexString()}`; }); return result; });
@@ -119,9 +120,9 @@ try {
     assert.deepEqual(await page.evaluate(() => [...window.duckrobe.thumbnails.keys()].filter(key => key.startsWith('look:')).sort()), cached, 'Custom colors must not queue a new full catalog');
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); await workspace();
     assert.equal(await page.locator('#color-lock').getAttribute('aria-pressed'), 'true'); assert.deepEqual(await colors(), { shell: '#bdace3', accent: '#f5cf76' });
-    await page.locator('#apply-look-colors').click(); assert.deepEqual(await colors(), different.bodyColors);
+    await openPanel('colors-panel'); await page.locator('#apply-look-colors').click(); assert.deepEqual(await colors(), different.bodyColors);
     assert.equal(await page.locator('#color-lock').getAttribute('aria-pressed'), 'true');
-    await page.locator('#color-lock').click(); await selectLook(first.id); assert.deepEqual(await colors(), first.bodyColors);
+    await openPanel('colors-panel'); await page.locator('#color-lock').click(); await selectLook(first.id); assert.deepEqual(await colors(), first.bodyColors);
   });
   await check('scrolling incrementally renders all 100 unique real previews', async () => {
     await switchSlot('all'); await workspace();
@@ -148,7 +149,7 @@ try {
     await page.locator('#outfit-search').fill(catalog[0].en); assert(await page.locator(`[data-outfit="${catalog[0].id}"]`).isVisible());
     await page.locator('#outfit-search').fill(catalog[0].name); assert(await page.locator(`[data-outfit="${catalog[0].id}"]`).isVisible());
     const before = await selection(); await page.locator('[data-language="zh"]').click(); assert.match(await page.locator('html').getAttribute('lang'), /^zh/);
-    assert(/\p{Script=Han}/u.test(await page.locator('#color-lock').innerText())); assert.deepEqual(await selection(), before);
+    await openPanel('colors-panel'); assert(/\p{Script=Han}/u.test(await page.locator('#color-lock').innerText())); assert.deepEqual(await selection(), before);
     await page.locator('#outfit-search').fill('no-such-duck-qa-837'); assert.equal(await page.locator('[data-outfit]').count(), 0);
     await page.locator('#clear-filters').click(); assert.equal(await page.locator('[data-outfit]').count(), 100);
     await page.locator('[data-language="en"]').click();
@@ -193,7 +194,7 @@ try {
   let savedSelection, savedColors, savedId;
   await check('saving a multi-accessory look keeps colors, lock and canonical choices across reload', async () => {
     savedSelection = await selection(); await setColor('#shell-color', '#bdace3'); await setColor('#accent-color', '#f2dbac'); savedColors = await colors();
-    if (await page.locator('#color-lock').getAttribute('aria-pressed') !== 'true') await page.locator('#color-lock').click();
+    if (await page.locator('#color-lock').getAttribute('aria-pressed') !== 'true') { await openPanel('colors-panel'); await page.locator('#color-lock').click(); }
     await page.locator('#save-look').click(); savedId = await page.evaluate(() => window.duckrobe.state.saved[0].id);
     await page.locator('#save-look').click(); assert.equal(await page.locator('#saved-count').innerText(), '1');
     await setColor('#shell-color', '#ed8938'); await page.locator('#save-look').click(); assert.equal(await page.locator('#saved-count').innerText(), '2');
@@ -218,11 +219,13 @@ try {
     assert.equal(actions.length, 16); assert.equal(new Set(actions.map(action => action.id)).size, 16);
     const extra = actions.filter(action => !action.featured && action.id !== 'rest'); assert.equal(extra.length, 12);
     assert.equal(await page.locator('#pet-action-menu [data-action]').count(), 3); assert.equal(await page.locator('#extra-action-menu [data-action]').count(), 12);
+    await openPanel('moves-panel');
     if (await page.locator('#motion-toggle').getAttribute('aria-pressed') === 'true') await page.locator('#motion-toggle').click();
     await page.mouse.move(1, 1); await frames(35); const resting = await frames(8);
     for (const joint of Object.keys(resting[0].joints)) assert(extent(resting.map(frame => frame.joints[joint])) < .008, `${joint} did not settle`);
     const signatures = [];
     for (const action of actions.filter(action => action.id !== 'rest')) {
+      await openPanel('moves-panel');
       if (!action.featured) await page.locator('.more-actions summary').click();
       await page.locator(`${action.featured ? '#pet-action-menu' : '#extra-action-menu'} [data-action="${action.id}"]`).click();
       if (!action.featured) assert.equal(await page.locator('.more-actions').getAttribute('open'), null);
@@ -278,7 +281,7 @@ try {
   await check('saved deletion persists and desktop 1366×768 exposes all workspace controls', async () => {
     await page.locator('#saved-nav').click(); while (await page.locator('[data-saved]').count()) await page.locator('[data-saved] .card-delete').first().click(); assert.equal(await page.locator('#saved-count').innerText(), '0');
     await page.locator('#clear-filters').click(); await switchSlot('all'); await page.setViewportSize({ width: 1366, height: 768 }); await workspace(); await noOverflow();
-    for (const selector of ['#save-look', '#export-look', '#color-lock', '#motion-toggle', '#pet-action-menu']) { const box = await page.locator(selector).boundingBox(); assert(box && box.y >= 0 && box.y + box.height <= 769, `${selector} outside the workspace`); }
+    for (const selector of ['#save-look', '#export-look', '#colors-panel > summary', '#moves-panel > summary', '#frame-camera']) { const box = await page.locator(selector).boundingBox(); assert(box && box.y >= 0 && box.y + box.height <= 769, `${selector} outside the workspace`); }
     await snapshot('desktop-1366.png');
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); assert.equal(await page.locator('#saved-count').innerText(), '0');
   });

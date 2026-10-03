@@ -67,14 +67,14 @@ function refreshLook({ geometry = false } = {}) {
   $('equipped-items').querySelectorAll('[data-choose-slot]').forEach(button => button.addEventListener('click', () => { setView('wardrobe'); setSlot(button.dataset.chooseSlot); if (button.dataset.region) { state.accessoryRegion = button.dataset.region; renderAccessoryFilters(); renderCatalog({ resetScroll: true }); } }));
   $('equipped-items').querySelectorAll('[data-remove-item]').forEach(button => button.addEventListener('click', () => { state.selection = removeItem(state.selection, button.dataset.removeItem); refreshLook({ geometry: true }); refreshColors(); renderCatalog(); persist(); }));
 }
-function selectLook(id) { const look = outfitById.get(id); if (!look) return; state.selection = validSelection(look.selection); if (!state.colorLocked) { state.colors = lookColors(look); preview?.setColors(state.colors); } refreshLook({ geometry: true }); refreshColors(); renderCatalog(); persist(); }
-function selectItem(id) { const item = itemById.get(id); if (!item) return; state.selection = item.slot === 'accessory' && selectedItemIds(state.selection, 'accessory').includes(id) ? removeItem(state.selection, id) : equipItem(state.selection, id); refreshLook({ geometry: true }); refreshColors(); renderCatalog(); persist(); }
+function selectLook(id) { const look = outfitById.get(id); if (!look) return; state.selection = validSelection(look.selection); if (!state.colorLocked) { state.colors = lookColors(look); preview?.setColors(state.colors); } refreshLook({ geometry: true }); preview?.setFraming('full'); refreshColors(); renderCatalog(); persist(); }
+function selectItem(id) { const item = itemById.get(id); if (!item) return; state.selection = item.slot === 'accessory' && selectedItemIds(state.selection, 'accessory').includes(id) ? removeItem(state.selection, id) : equipItem(state.selection, id); refreshLook({ geometry: true }); if (!['hat', 'eyewear'].includes(item.slot)) preview?.setFraming('full'); refreshColors(); renderCatalog(); persist(); }
 function toggleFavorite(key) { state.favorites.has(key) ? state.favorites.delete(key) : state.favorites.add(key); refreshLook(); renderCatalog(); persist(); }
 function renderSlots() {
   $('slot-controls').innerHTML = ['all', ...SLOT_IDS].map(slot => `<button class="slot-button${state.slot === slot ? ' active' : ''}" data-slot="${slot}" aria-pressed="${state.slot === slot}">${icon(slotIcons[slot])}<span>${tr(slotKeys[slot])}</span></button>`).join('');
   $('slot-controls').querySelectorAll('button').forEach(button => button.addEventListener('click', () => setSlot(button.dataset.slot)));
 }
-function setSlot(slot) { state.slot = slot; state.accessoryRegion = 'all'; state.theme = 'all'; state.query = ''; $('outfit-search').value = ''; renderSlots(); renderFilters(); renderAccessoryFilters(); refreshLook(); renderCatalog({ resetScroll: true }); }
+function setSlot(slot) { if (!['hat', 'eyewear'].includes(slot)) preview?.setFraming('full'); state.slot = slot; state.accessoryRegion = 'all'; state.theme = 'all'; state.query = ''; $('outfit-search').value = ''; renderSlots(); renderFilters(); renderAccessoryFilters(); refreshLook(); renderCatalog({ resetScroll: true }); }
 function renderFilters() {
   $('theme-filters').innerHTML = [{ id: 'all', name: tr('allThemes'), en: tr('allThemes') }, ...THEMES].map(theme => `<button class="theme-chip${state.theme === theme.id ? ' active' : ''}" data-theme="${theme.id}" aria-pressed="${state.theme === theme.id}">${escape(nameOf(theme))}</button>`).join('');
   $('theme-filters').querySelectorAll('button').forEach(button => button.addEventListener('click', () => { state.theme = button.dataset.theme; renderFilters(); renderCatalog({ resetScroll: true }); }));
@@ -133,7 +133,7 @@ function renderCatalog({ resetScroll = false } = {}) {
     }).join('') : emptyState('saved');
     grid.querySelectorAll('[data-saved]').forEach(card => {
       const look = state.saved.find(look => look.id === card.dataset.saved);
-      card.querySelector('.card-open').addEventListener('click', () => { state.selection = validSelection(look.selection); state.colors = { ...look.colors }; preview?.setColors(state.colors); refreshColors(); refreshLook({ geometry: true }); persist(); toast(tr('restoredToast')); });
+      card.querySelector('.card-open').addEventListener('click', () => { state.selection = validSelection(look.selection); state.colors = { ...look.colors }; preview?.setColors(state.colors); refreshColors(); refreshLook({ geometry: true }); preview?.setFraming('full'); persist(); toast(tr('restoredToast')); });
       card.querySelector('.card-delete').addEventListener('click', () => { state.saved = state.saved.filter(item => item.id !== look.id); persist(); refreshLook(); renderCatalog(); toast(tr('removedToast')); });
     });
     observeCatalog(looks.filter(look => !look.thumbnail).map(look => ({ key: `saved:${look.id}`, selection: look.selection, options: { colors: look.colors } })), (key, url) => {
@@ -179,14 +179,28 @@ function refreshColors() {
 }
 function setColors(colors) { state.colors = normalizeRobotColors(colors); preview?.setColors(state.colors); refreshColors(); persist(); }
 function setMotion() { preview?.setMotion(state.bouncing); $('motion-toggle').classList.toggle('active', state.bouncing); $('motion-toggle').setAttribute('aria-pressed', String(state.bouncing)); $('motion-label').textContent = tr(state.bouncing ? 'motionOn' : 'motionOff'); }
+function playAction(action) { preview?.trigger(action); $('moves-panel').open = false; $('moves-panel').querySelector('summary').focus({ preventScroll: true }); }
 function renderExtraActions() {
   const menu = $('extra-action-menu'); if (!menu) return;
   menu.innerHTML = ACTIONS.filter(action => !action.featured && action.id !== 'rest').map(action => `<button data-action="${action.id}" title="${escape(state.language === 'zh' ? action.zh : action.en)}"><span>${icon('sparkles')}</span><span>${escape(state.language === 'zh' ? action.zh : action.en)}</span></button>`).join('');
-  menu.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => { preview?.trigger(button.dataset.action); menu.closest('details').open = false; }));
+  menu.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => { playAction(button.dataset.action); menu.closest('details').open = false; }));
 }
-function setLanguage(language) { state.language = language; applyLanguage(language); renderSlots(); renderFilters(); renderAccessoryFilters(); renderExtraActions(); refreshLook(); refreshColors(); renderCatalog(); setMotion(); preview?.setLabel(tr('canvasLabel')); persist(); }
+function updateFrameButton(mode = preview?.getFraming() || 'full') { $('frame-camera').textContent = tr(mode === 'portrait' ? 'fullLook' : 'closeUp'); $('frame-camera').setAttribute('aria-pressed', String(mode === 'portrait')); }
+function setLanguage(language) { state.language = language; applyLanguage(language); renderSlots(); renderFilters(); renderAccessoryFilters(); renderExtraActions(); refreshLook(); refreshColors(); renderCatalog(); setMotion(); preview?.setLabel(tr('canvasLabel')); updateFrameButton(); persist(); }
 function showInfo(content) { $('dialog-content').innerHTML = content; $('info-dialog').showModal(); }
 function hydrateIcons() { document.querySelectorAll('[data-icon]').forEach(node => { node.innerHTML = icon(node.dataset.icon); }); }
+$('frame-camera').addEventListener('click', () => preview?.setFraming(preview.getFraming() === 'portrait' ? 'full' : 'portrait'));
+$('studio-shuffle').addEventListener('click', () => $('random-button').click());
+const studioPanels = [...document.querySelectorAll('.studio-panel')];
+for (const panel of studioPanels) panel.addEventListener('toggle', () => {
+  if (panel.open) for (const other of studioPanels) if (other !== panel) other.open = false;
+});
+document.addEventListener('click', event => {
+  if (!event.target.closest('.studio-panel')) studioPanels.forEach(panel => { panel.open = false; });
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') for (const panel of studioPanels) if (panel.open) { panel.open = false; panel.querySelector('summary').focus(); }
+});
 hydrateIcons();
 $('dialog-close').addEventListener('click', () => $('info-dialog').close());
 $('info-dialog').addEventListener('click', event => { if (event.target === $('info-dialog')) { const rect = event.target.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) event.target.close(); } });
@@ -201,7 +215,7 @@ $('favorite-look').addEventListener('click', () => { const look = currentLook(),
 $('random-button').addEventListener('click', () => { const pool = (state.slot === 'all' ? OUTFITS : ITEMS.filter(item => item.slot === state.slot)).filter(item => (state.theme === 'all' || item.theme === state.theme) && (state.slot !== 'accessory' || state.accessoryRegion === 'all' || item.region === state.accessoryRegion)); const choice = pool[Math.floor(Math.random() * pool.length)]; if (choice) state.slot === 'all' ? selectLook(choice.id) : selectItem(choice.id); toast(tr('randomToast')); });
 $('motion-toggle').addEventListener('click', () => { state.bouncing = !state.bouncing; setMotion(); });
 $('jump-button')?.addEventListener('click', () => preview?.trigger('hop'));
-$('pet-action-menu').querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => preview?.trigger(button.dataset.action)));
+$('pet-action-menu').querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => playAction(button.dataset.action)));
 $('reset-camera').addEventListener('click', () => preview?.resetCamera());
 $('shell-color').addEventListener('input', event => setColors({ ...state.colors, shell: event.target.value }));
 $('accent-color').addEventListener('input', event => setColors({ ...state.colors, accent: event.target.value }));
@@ -254,7 +268,7 @@ window.addEventListener('pointerup', finishCatalogDrag);
 document.addEventListener('click', event => { if (!event.target.closest('.more-actions')) document.querySelector('.more-actions')?.removeAttribute('open'); });
 matchMedia('(min-width: 1100px)').addEventListener('change', () => { finishCatalogDrag(); renderCatalog(); });
 setLanguage(state.language);
-createPreview({ viewer: $('viewer'), colors: state.colors, selection: state.selection, onReaction: () => {
+createPreview({ viewer: $('viewer'), onFraming: updateFrameButton, colors: state.colors, selection: state.selection, onReaction: () => {
   const bubble = $('pet-reaction'); bubble.hidden = false; bubble.textContent = ['♡', '✦', '♪'][Math.floor(Math.random() * 3)]; clearTimeout(reactionTimer); reactionTimer = setTimeout(() => { bubble.hidden = true; }, 1700);
 } }).then(result => {
   preview = result;
