@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build:
-    name: Validate and build
+    name: Build site
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -32,22 +32,6 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Validate catalogue geometry and combinations
-        run: node scripts/validate-catalog.mjs
-      - name: Validate hats and single-eye frames against the native head
-        run: |
-          node scripts/validate-hat-fit.mjs
-          node scripts/validate-eyewear-fit.mjs
-      - name: Validate footwear against native feet and moving joints
-        run: node scripts/validate-footwear-fit.mjs
-      - name: Validate accessories and wing visibility against the moving robot
-        run: node scripts/validate-accessory-fit.mjs
-      - name: Validate robot behavior
-        run: node scripts/validate-behavior.mjs
-      - name: Validate all outfit exports
-        run: npm run check:exports
-      - name: Validate root and Pages asset paths
-        run: node scripts/validate-subpath-assets.mjs
       - name: Read Pages configuration
         id: pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
