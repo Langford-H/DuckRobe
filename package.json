@@ -11,7 +11,9 @@
     "check:exports": "node scripts/validate-exports.mjs --all"
   },
   "dependencies": {
+    "@mujoco/mujoco": "3.11.0",
     "fflate": "^0.8.2",
+    "onnxruntime-web": "1.27.0",
     "three": "^0.180.0"
   },
   "devDependencies": {
