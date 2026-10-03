@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "check:ui": "node scripts/smoke-ui.mjs",
-    "check:exports": "node scripts/validate-exports.mjs --all"
+    "check:exports": "node scripts/validate-exports.mjs --all",
+    "check:playground": "node scripts/validate-playground.mjs",
+    "check:playground:ui": "node scripts/smoke-playground.mjs"
   },
   "dependencies": {
     "@mujoco/mujoco": "3.11.0",
