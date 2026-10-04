@@ -31,6 +31,14 @@ try {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, hasTouch: true });
     await context.addInitScript(() => {
       // Instrument the browser boundary, without adding hooks to production.
+      window.__playgroundDraws = 0;
+      for (const prototype of [WebGLRenderingContext.prototype, WebGL2RenderingContext.prototype]) {
+        const draw = prototype.drawElements;
+        prototype.drawElements = function(...args) {
+          if (this.canvas.parentElement?.classList.contains('playground-canvas')) window.__playgroundDraws++;
+          return draw.apply(this, args);
+        };
+      }
       window.__workers = { active: 0, created: 0, messages: [], instances: [], resets: 0 };
       const NativeWorker = window.Worker;
       window.Worker = class extends NativeWorker {
@@ -98,6 +106,32 @@ try {
         await page.evaluate(() => window.dispatchEvent(new Event('blur')));
         assert.equal(await page.evaluate(() => window.__workers.messages.at(-1).forward), 0);
         await page.keyboard.up('ArrowUp');
+      });
+      await check(`${base} idle pause stops drawing; camera, resize and resume redraw`, async () => {
+        await page.locator('[data-pause]').click(); await status('paused');
+        const settle = () => page.waitForFunction(() => {
+          const draws = window.__playgroundDraws, now = performance.now();
+          if (window.__lastDraws !== draws) { window.__lastDraws = draws; window.__drawsSettledAt = now; }
+          return draws > 0 && now - window.__drawsSettledAt > 600;
+        });
+        await settle();
+        const frozen = await page.evaluate(() => window.__playgroundDraws);
+        await page.waitForTimeout(600); assert.equal(await page.evaluate(() => window.__playgroundDraws), frozen);
+        await page.mouse.move(700, 380); await page.mouse.down(); await page.mouse.move(780, 420, { steps: 4 }); await page.mouse.up();
+        await page.waitForFunction(draws => window.__playgroundDraws > draws, frozen);
+        await settle();
+        const orbitDraws = await page.evaluate(() => window.__playgroundDraws);
+        await page.mouse.wheel(0, 150);
+        await page.waitForFunction(draws => window.__playgroundDraws > draws, orbitDraws);
+        await settle();
+        const zoomDraws = await page.evaluate(() => window.__playgroundDraws);
+        await page.setViewportSize({ width: 1400, height: 880 });
+        await page.waitForFunction(draws => window.__playgroundDraws > draws, zoomDraws);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.locator('[data-follow]').click();
+        const pausedDraws = await page.evaluate(() => window.__playgroundDraws);
+        await page.locator('[data-pause]').click(); await advance(.1);
+        await page.waitForFunction(draws => window.__playgroundDraws > draws, pausedDraws);
       });
       await check(`${base} pause, explicit visibility resume, reset, orbit and follow`, async () => {
         await page.locator('[data-pause]').click(); await status('paused'); await page.waitForTimeout(100);

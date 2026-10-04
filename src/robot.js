@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createBehaviorController } from './behavior.js';
+import { indexRobotGeometry } from './robot-geometry.js';
 
 // Microduck's CAD frames use metres, +X forward and +Z up. Keep those
 // frames intact so preview geometry and the native MJCF export agree.
@@ -117,6 +118,7 @@ async function loadRobotAssets(signal) {
     scaled.scale(1000, 1000, 1000);
     const geometry = toCreasedNormals(scaled, Math.PI / 5);
     geometry.scale(0.001, 0.001, 0.001);
+    indexRobotGeometry(geometry);
     geometry.computeBoundingBox();
     scaled.dispose();
     geometries.set(name, geometry);

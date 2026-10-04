@@ -164,8 +164,34 @@ subdivisions reduced the default scene from 971,988 to 840,918 triangles per
 frame (13.5%); the detailed CAD duck still accounts for most of the geometry.
 These results do not establish native desktop or phone GPU performance.
 
-The performance changes also passed real WASM physics checks, all 19 Playground
-browser checks, 7 studio checks, 127 export cases and root/Pages production
+Additional rendering-load changes on 2026-10-04 share only bit-identical
+position/normal pairs after crease shading. For all 38 unique CAD parts,
+stored vertices fall from 1,295,406 to 386,883 (70.1%), and position, normal
+and index buffers from 31,089,744 to 11,876,004 bytes (61.8%). These are unique
+geometry buffer totals for one rig, excluding textures, driver overhead and
+temporary preparation allocations. The expanded triangle stream, winding,
+normals and bounds remain identical. Download assets and physics are unchanged.
+The indexing pass took about 78 ms in an isolated Node prototype; it runs once
+during wardrobe mesh preparation, and Playground copies the prepared buffers.
+
+A sequential 1440×900, pixel-ratio-1 SwiftShader prototype check measured
+3.92/2.66 FPS before and 3.62/2.51 FPS after for first/repeat visits. This
+does **not** establish an FPS improvement. Triangle count (840,918 in the
+default scene), draw calls (165) and fragment work are unchanged. A lighter
+display mesh or adjustable resolution is a separate visual-quality tradeoff
+that should be evaluated on the affected native browser/GPU.
+
+Paused and fallen scenes now redraw only when their pose, camera or canvas
+size changes. Running and loading scenes continue rendering. Browser checks
+verify zero draw calls while a paused camera is settled, followed by redraws
+on drag, wheel zoom, resize and resume. Camera damping is allowed to finish
+before drawing stops; a cheap animation-frame callback still observes controls.
+`node scripts/validate-robot-geometry.mjs` verifies byte-identical expanded
+geometry and the WebGL2 index-width boundary.
+
+The performance changes also passed real WASM physics and geometry checks,
+all 21 Playground browser checks, 7 studio checks, garment-fit checks,
+127 export cases and root/Pages production
 builds. Gzip responses matched the original runtime bytes under both development
 bases, including HEAD, conditional requests and disabled gzip negotiation.
 

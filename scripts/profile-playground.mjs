@@ -45,8 +45,8 @@ try {
       page.on('pageerror', error => errors.push(error.message));
       await page.route('**/src/playground/index.js*', async route => {
         const response = await route.fetch();
-        const body = replace(await response.text(), 'controls.update(); renderer.render(scene, camera);',
-          'controls.update(); const profileRenderStart = performance.now(); renderer.render(scene, camera); window.__profile.renders.push({ at: performance.now(), ms: performance.now() - profileRenderStart, triangles: renderer.info.render.triangles, calls: renderer.info.render.calls, pixels: renderer.domElement.width * renderer.domElement.height });');
+        const body = replace(await response.text(), 'renderer.render(scene, camera);',
+          'const profileRenderStart = performance.now(); renderer.render(scene, camera); window.__profile.renders.push({ at: performance.now(), ms: performance.now() - profileRenderStart, triangles: renderer.info.render.triangles, calls: renderer.info.render.calls, pixels: renderer.domElement.width * renderer.domElement.height });');
         await route.fulfill({ response, body });
       });
       await page.route('**/src/playground/physics.worker.js*', async route => {

@@ -135,6 +135,10 @@ try {
     assert.notEqual(mesh.geometry, source.geometry);
     assert.notEqual(mesh.geometry.attributes.position.array, source.geometry.attributes.position.array);
     assert.deepEqual(mesh.geometry.attributes.position.array, source.geometry.attributes.position.array);
+    assert.notEqual(mesh.geometry.attributes.normal.array, source.geometry.attributes.normal.array);
+    assert.deepEqual(mesh.geometry.attributes.normal.array, source.geometry.attributes.normal.array);
+    assert.notEqual(mesh.geometry.index.array, source.geometry.index.array);
+    assert.deepEqual(mesh.geometry.index.array, source.geometry.index.array);
     assert.notEqual(mesh.material, source.material);
   });
   copiedRig.setColors(colors);
