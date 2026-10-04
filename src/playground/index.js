@@ -19,7 +19,7 @@ function disposeTree(root) {
   geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose());
 }
 
-export function createPlayground({ host, selection, colors, language, onExit }) {
+export function createPlayground({ host, selection, colors, language, sourceRig, onExit }) {
   const tr = key => t(key, language), chosen = normalizeSelection(selection);
   const inputs = new AbortController(), keys = new Set(), pointers = new Map(), pulses = new Set();
   const directions = { KeyW: 'forward', ArrowUp: 'forward', KeyS: 'back', ArrowDown: 'back', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right' };
@@ -121,6 +121,29 @@ export function createPlayground({ host, selection, colors, language, onExit }) 
     const alive = () => !disposed && current === attempt && !attempt.abort.signal.aborted;
     attempt.timeout = setTimeout(() => fail(attempt, new Error(tr('playgroundTimeout'))), 60000);
     try {
+      const baseUrl = new URL(robotAssetUrl('/playground/'), location.href).href;
+      const model = await loadPhysicsAssets(baseUrl, attempt.abort.signal);
+      if (!alive()) return;
+      const workerPromise = (async () => {
+        const worker = new Worker(new URL('./physics.worker.js', import.meta.url), { type: 'module' }); attempt.worker = worker;
+        await new Promise((resolve, reject) => {
+          attempt.abort.signal.addEventListener('abort', () => reject(new DOMException('Playground closed', 'AbortError')), { once: true });
+          worker.onerror = event => { event.preventDefault(); const error = new Error(event.message || tr('playgroundError')); reject(error); fail(attempt, error); };
+          worker.onmessage = ({ data }) => {
+            if (!alive()) return;
+            if (data.type === 'progress') { stage = data.stage; setStatus('loading'); }
+            else if (data.type === 'ready') { syncPose(attempt, data.pose); resolve(); }
+            else if (data.type === 'pose') syncPose(attempt, data.pose);
+            else if (data.type === 'fallen') { clearInputs(); setStatus('fallen'); }
+            else if (data.type === 'reset') { resetCamera(attempt); if (!document.hidden) resume(); }
+            else if (data.type === 'error') { const error = new Error(data.message); reject(error); fail(attempt, error); }
+          };
+          worker.postMessage({ type: 'init', ...model, policyUrl: new URL('walking.onnx', baseUrl).href }, model.meshes.map(mesh => mesh.bytes));
+        });
+      })();
+      // Runtime initialization overlaps the GPU/environment and visual rig.
+      // Observe failures even if graphics setup throws before Promise.all.
+      workerPromise.catch(() => {});
       const scene = new THREE.Scene(); attempt.scene = scene; scene.background = new THREE.Color(0x08080c);
       const renderer = new THREE.WebGLRenderer({ antialias: true }); attempt.renderer = renderer;
       renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -163,33 +186,14 @@ export function createPlayground({ host, selection, colors, language, onExit }) 
         }
         controls.update(); renderer.render(scene, camera);
       }
+      // Warm the render pipeline while the independent runtimes initialize.
       frame();
-      const baseUrl = new URL(robotAssetUrl('/playground/'), location.href).href;
-      const rigPromise = loadRobot({ colors, signal: attempt.abort.signal }).then(rig => {
+      const rigPromise = loadRobot({ colors, signal: attempt.abort.signal, sourceRig }).then(rig => {
         if (!alive()) { disposeTree(rig.group); return; }
         attempt.rig = rig;
         scene.add(dressSimulationRig(rig, chosen));
         if (latestPose) syncPose(attempt, latestPose);
       });
-      const workerPromise = (async () => {
-        const model = await loadPhysicsAssets(baseUrl, attempt.abort.signal);
-        if (!alive()) return;
-        const worker = new Worker(new URL('./physics.worker.js', import.meta.url), { type: 'module' }); attempt.worker = worker;
-        await new Promise((resolve, reject) => {
-          attempt.abort.signal.addEventListener('abort', () => reject(new DOMException('Playground closed', 'AbortError')), { once: true });
-          worker.onerror = event => { event.preventDefault(); const error = new Error(event.message || tr('playgroundError')); reject(error); fail(attempt, error); };
-          worker.onmessage = ({ data }) => {
-            if (!alive()) return;
-            if (data.type === 'progress') { stage = data.stage; setStatus('loading'); }
-            else if (data.type === 'ready') { syncPose(attempt, data.pose); resolve(); }
-            else if (data.type === 'pose') syncPose(attempt, data.pose);
-            else if (data.type === 'fallen') { clearInputs(); setStatus('fallen'); }
-            else if (data.type === 'reset') { resetCamera(attempt); if (!document.hidden) resume(); }
-            else if (data.type === 'error') { const error = new Error(data.message); reject(error); fail(attempt, error); }
-          };
-          worker.postMessage({ type: 'init', ...model, policyUrl: new URL('walking.onnx', baseUrl).href }, model.meshes.map(mesh => mesh.bytes));
-        });
-      })();
       await Promise.all([rigPromise, workerPromise]);
       if (!alive()) return;
       clearTimeout(attempt.timeout); resetCamera(attempt); setStatus('paused'); resume();

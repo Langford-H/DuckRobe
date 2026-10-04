@@ -130,6 +130,9 @@ try {
       });
       if (base === '/') {
         await check('missing model assets show Retry and Back; retry recovers', async () => {
+          // A new page drops successful prepared-asset caches, so this still
+          // exercises a genuinely missing cold-load asset.
+          await page.reload(); await page.waitForFunction(() => window.duckrobe?.ready);
           await page.route('**/playground/robot.xml', route => route.fulfill({ status: 404, body: 'missing' }), { times: 1 });
           await page.locator('#open-playground').click(); await status('error');
           assert.match(await page.locator('[data-detail]').innerText(), /404/);
@@ -213,6 +216,15 @@ try {
     const context = await browser.newContext({ viewport: { width: 1100, height: 740 } });
     const page = await context.newPage();
     try {
+      for (const asset of ['@mujoco/mujoco/mujoco.wasm', 'onnxruntime-web/dist/ort-wasm-simd-threaded.wasm']) {
+        const response = await context.request.get(`http://127.0.0.1:${dev.httpServer.address().port}/node_modules/${asset}`, { headers: { 'Accept-Encoding': 'gzip' } });
+        const bytes = await readFile(`node_modules/${asset}`);
+        assert.equal(response.headers()['content-encoding'], 'gzip');
+        const vary = response.headers().vary.toLowerCase().split(',').map(value => value.trim());
+        assert(vary.includes('origin') && vary.includes('accept-encoding'));
+        assert(Number(response.headers()['content-length']) < bytes.length / 2);
+        assert.deepEqual(await response.body(), bytes);
+      }
       await page.goto(`http://127.0.0.1:${dev.httpServer.address().port}`);
       await page.waitForFunction(() => window.duckrobe?.ready);
       const origin = await page.evaluate(() => performance.timeOrigin);
